@@ -343,7 +343,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9tyioXeNUUJu0_iI4N9Z-6bnE6__qqxF1Kzq-5wCJEeRElj58LZZ1BHjqAPV6W0XM/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx63kMD0LH37enIYrHt0IiaERqUvhqstHiu19SDXC9PN-Z19Z51oVucuY8Oh2KQkN7KwQ/exec';
 
 // =============================================
 // STATE
@@ -636,6 +636,25 @@ async function showRace(idx) {
 
   if (submitted) {
     panel.innerHTML += `<div class="pick-status picked">✓ Submitted: <strong>${myPick}</strong></div>`;
+    // Show detail card for the submitted horse
+    const raceRunners = runners[race.race_id] || [];
+    const h = raceRunners.find(r => r.name === myPick);
+    if (h) {
+      const colourMap = {'b':'Bay','br':'Brown','ch':'Chestnut','gr':'Grey','bl':'Black','ro':'Roan','wh':'White'};
+      const colour = colourMap[(h.colour||'').toLowerCase()] || h.colour || '';
+      const tags = [
+        h.age ? h.age + 'yo' : '', colour,
+        h.draw ? 'Draw ' + h.draw : '', h.ofr ? 'OR ' + h.ofr : '',
+        h.lbs ? h.lbs + 'lbs' : '', h.last_run ? h.last_run + 'd ago' : ''
+      ].filter(Boolean).join(' · ');
+      panel.innerHTML += `<div style="background:var(--green-light);border-radius:8px;padding:10px 12px;
+        margin-top:8px;font-size:13px;line-height:1.8">
+        <div style="font-weight:600;font-size:15px;margin-bottom:4px">${h.name}</div>
+        <div style="color:var(--text-muted)">${h.jockey || ''}${h.trainer ? ' · ' + h.trainer : ''}</div>
+        ${tags ? `<div style="color:var(--text-muted);margin-top:2px">${tags}</div>` : ''}
+        ${h.form ? `<div style="font-weight:500;letter-spacing:1px;color:var(--green-mid);margin-top:4px">${h.form}</div>` : ''}
+      </div>`;
+    }
     return;
   }
   if (myPick) {
@@ -789,6 +808,7 @@ async function submitPick(raceId, course, time, name) {
   if (!horse) return;
 
   const btn = event.target;
+  const originalText = btn.textContent;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
@@ -808,7 +828,7 @@ async function submitPick(raceId, course, time, name) {
     if (data.error) {
       alert(data.error);
       btn.disabled = false;
-      btn.textContent = 'Submit ✓';
+      btn.textContent = originalText || 'Submit ✓';
       return;
     }
     if (!picks[currentPlayer]) picks[currentPlayer] = {};
@@ -942,40 +962,76 @@ async function loadResults() {
       byRace[p.race_id].picks.push(p);
     });
 
-    let html = '';
-    for (const [raceId, raceData] of Object.entries(byRace)) {
-      const hasResults = raceData.picks.some(p => p.finish !== '');
-      html += `<div class="card">
-        <div class="card-header">
-          ${raceData.course}
-          <span class="time">${raceData.time}</span>
-        </div>
-        <div class="card-body">`;
+    // Sort races by time
+    const sortedRaces = Object.entries(byRace).sort((a, b) => {
+      const ta = cleanRaceTime(a[1].time), tb = cleanRaceTime(b[1].time);
+      return ta.localeCompare(tb);
+    });
 
-      if (!hasResults) {
-        html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <span class="text-muted">Results pending</span>
-          <button class="btn btn-amber" style="font-size:13px;padding:7px 14px"
-            onclick="fetchRaceResults('${raceId}', ${weekNumber}, this)">
-            Fetch results
-          </button>
-        </div>`;
+    let html = '';
+    for (const [raceId, raceData] of sortedRaces) {
+      const hasResults = raceData.picks.some(p => p.finish !== '' && p.finish !== undefined);
+      const weekPts = raceData.picks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
+
+      html += `<div class="card" style="margin-bottom:10px">
+        <div class="card-header" style="cursor:pointer;user-select:none"
+          onclick="toggleRaceDetail('rd_${raceId}', this)">
+          <div>
+            <span style="font-weight:600">${raceData.course}</span>
+            <span class="time" style="margin-left:8px">${cleanRaceTime(raceData.time)}</span>
+            ${raceData.name ? `<div style="font-size:11px;opacity:0.8;font-weight:400;margin-top:2px">${raceData.name}</div>` : ''}
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            ${hasResults
+              ? `<span style="font-size:12px;opacity:0.85">${weekPts} pts total</span>`
+              : `<button class="btn btn-amber" style="font-size:12px;padding:5px 11px"
+                  onclick="event.stopPropagation();fetchRaceResults('${raceId}',${weekNumber},this)">
+                  Fetch results
+                </button>`}
+            <span class="toggle-arrow" style="font-size:16px;transition:transform 0.2s">›</span>
+          </div>
+        </div>
+        <div id="rd_${raceId}" style="display:none">
+          <div class="card-body" style="padding:0">`;
+
+      if (hasResults) {
+        // Sort picks by finish position
+        const sorted = [...raceData.picks].sort((a,b) => {
+          const pa = parseInt(a.finish)||99, pb = parseInt(b.finish)||99;
+          return pa - pb;
+        });
+        const medals = ['🥇','🥈','🥉'];
+        sorted.forEach(p => {
+          const pts = parseInt(p.points) || 0;
+          const finish = p.finish || 'NP';
+          const isPlaced = pts > 0;
+          html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border-bottom:1px solid var(--border);
+            background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+            <div style="width:32px;text-align:center;font-size:15px;flex-shrink:0">
+              ${medals[parseInt(finish)-1] || `<span style="color:var(--text-muted);font-size:13px">${finish}</span>`}
+            </div>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:14px">${p.horse}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${p.player}</div>
+            </div>
+            <span class="points-badge pts-${Math.min(pts,3)}">${pts} pt${pts!==1?'s':''}</span>
+          </div>`;
+        });
+      } else {
+        raceData.picks.forEach(p => {
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;
+            padding:10px 14px;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:14px">${p.horse}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${p.player}</div>
+            </div>
+            <span style="font-size:12px;color:var(--text-muted)">Pending</span>
+          </div>`;
+        });
       }
 
-      // Show picks
-      raceData.picks.forEach(p => {
-        const pts = parseInt(p.points) || 0;
-        const finish = p.finish || '—';
-        html += `<div class="result-row">
-          <div>
-            <div class="horse">${p.horse}</div>
-            <div class="pos">${p.player}${finish !== '—' ? ' · Finished ' + finish : ''}</div>
-          </div>
-          <span class="points-badge pts-${pts}">${hasResults ? pts + ' pt' + (pts!==1?'s':'') : '—'}</span>
-        </div>`;
-      });
-
-      html += '</div></div>';
+      html += `</div></div></div>`;
     }
 
     document.getElementById('results-content').innerHTML = html;
@@ -1018,23 +1074,63 @@ async function loadLeaderboard() {
     const data = await res.json();
     const standings = data.standings || [];
 
-    let html = '<div class="card"><div class="card-header">2026 Season standings</div><div class="card-body">';
+    const weeks = data.weeks || [];
+    const maxPts = Math.max(...standings.map(s => s.total), 1);
+
+    let html = '<div class="card"><div class="card-header">2026 Season standings</div><div class="card-body" style="padding:0">';
     if (standings.length === 0) {
-      html += '<p class="text-muted">No results recorded yet.</p>';
+      html += '<p class="text-muted" style="padding:14px">No results recorded yet.</p>';
     } else {
       standings.forEach((s, i) => {
         const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
-        html += `<div class="leaderboard-row">
-          <div class="lb-rank ${rankClass}">${i+1}</div>
-          <div class="lb-name">${s.player}</div>
-          <div class="lb-pts">${s.total}<span>pts</span></div>
-        </div>`;
+        const barPct = Math.round((s.total / maxPts) * 100);
+        html += `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;
+              cursor:pointer;user-select:none" onclick="toggleSeasonDetail('sd_${s.player}', this)">
+              <div class="lb-rank ${rankClass}" style="flex-shrink:0">${i+1}</div>
+              <div style="flex:1">
+                <div style="font-weight:600;font-size:15px">${s.player}</div>
+                <div style="margin-top:4px;height:4px;background:var(--gray-light);border-radius:2px;overflow:hidden">
+                  <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px;transition:width 0.4s"></div>
+                </div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:22px;font-weight:700;color:var(--green)">${s.total}</div>
+                <div style="font-size:11px;color:var(--text-muted)">pts</div>
+              </div>
+              <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
+            </div>
+            <div id="sd_${s.player}" style="display:none;background:var(--gray-light);padding:12px 14px">
+              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">
+                Week by week
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">
+                ${(s.weekly||[]).map(w => {
+                  const wkBarPct = Math.round((w.pts / 21) * 100); // max possible ~21
+                  const wkColor = w.pts >= 10 ? 'var(--green)' : w.pts >= 5 ? 'var(--amber)' : 'var(--gray-light)';
+                  const wkTextColor = w.pts >= 5 ? '#fff' : 'var(--text)';
+                  return `<div style="background:#fff;border-radius:8px;padding:8px;text-align:center;
+                    border:1.5px solid ${w.pts > 0 ? 'var(--border)' : 'var(--border)'}">
+                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ${w.week}</div>
+                    <div style="font-size:16px;font-weight:700;color:${w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)'}">${w.pts}</div>
+                    <div style="font-size:10px;color:var(--text-muted)">pts</div>
+                  </div>`;
+                }).join('')}
+              </div>
+              <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);
+                display:flex;justify-content:space-between;font-size:13px">
+                <span style="color:var(--text-muted)">Best week: <strong>${Math.max(...(s.weekly||[{pts:0}]).map(w=>w.pts))} pts</strong></span>
+                <span style="color:var(--text-muted)">${(s.weekly||[]).filter(w=>w.pts>0).length} scoring weeks</span>
+              </div>
+            </div>
+          </div>`;
       });
     }
     html += '</div></div>';
 
-    // Also show this week's picks summary
-    const picksRes = await fetch(`${SCRIPT_URL}?action=getPicks&week=${weekNumber}`);
+    // This week summary
+    const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const picksData = await picksRes.json();
     const allPicks = picksData.picks || [];
 
@@ -1045,11 +1141,20 @@ async function loadLeaderboard() {
         weeklyTotals[p.player] += parseInt(p.points) || 0;
       });
       const sorted = Object.entries(weeklyTotals).sort((a,b)=>b[1]-a[1]);
+      const maxW = Math.max(...Object.values(weeklyTotals), 1);
 
-      html += '<div class="card"><div class="card-header">This week (Week ' + weekNumber + ')</div><div class="card-body">';
-      sorted.forEach(([player, pts]) => {
-        html += `<div class="result-row">
-          <span class="horse">${player}</span>
+      html += `<div class="card"><div class="card-header">This week — Week ${weekNumber}</div><div class="card-body" style="padding:0">`;
+      sorted.forEach(([player, pts], i) => {
+        const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
+        const barPct = Math.round((pts / maxW) * 100);
+        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+          <div class="lb-rank ${rankClass}" style="flex-shrink:0;width:24px;height:24px;font-size:12px">${i+1}</div>
+          <div style="flex:1">
+            <div style="font-weight:500;font-size:14px">${player}</div>
+            <div style="margin-top:3px;height:3px;background:var(--gray-light);border-radius:2px">
+              <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px"></div>
+            </div>
+          </div>
           <span class="points-badge pts-${Math.min(pts,3)}">${pts} pts</span>
         </div>`;
       });
@@ -1067,6 +1172,43 @@ async function loadLeaderboard() {
 // =============================================
 // UTILITIES
 // =============================================
+function toggleRaceDetail(id, header) {
+  const el = document.getElementById(id);
+  const arrow = header.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function toggleSeasonDetail(id, row) {
+  const el = document.getElementById(id);
+  const arrow = row.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+// Fix the 1899 date bug — race times stored as "01:35" or ISO datetimes
+function cleanRaceTime(t) {
+  if (!t) return '';
+  // If it looks like a full ISO datetime with 1899, extract just the time part
+  if (String(t).includes('1899') || String(t).includes('T')) {
+    const m = String(t).match(/T?(\d{2}:\d{2})/);
+    if (m) {
+      const [h, min] = m[1].split(':');
+      const hour = parseInt(h);
+      return (hour > 12 ? hour - 12 : hour) + ':' + min;
+    }
+  }
+  // Already a clean time string like "01:35" or "1:35"
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  if (m) {
+    const hour = parseInt(m[1]);
+    return (hour > 12 ? hour - 12 : hour) + ':' + m[2];
+  }
+  return String(t);
+}
+
 function formatTime(timeStr) {
   if (!timeStr) return '';
   // Handle ISO datetime or HH:MM
