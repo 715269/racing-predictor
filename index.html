@@ -531,8 +531,13 @@ async function loadRaces() {
     }
 
     // Check Sheet for this week's admin-selected races
-    const weekRes = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
-    const weekData = await weekRes.json();
+    let weekData = {};
+    try {
+      const weekRes = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
+      weekData = await weekRes.json();
+    } catch(e) {
+      console.log('getweekraces failed:', e);
+    }
 
     if (weekData.raceids && weekData.raceids.length > 0) {
       // Admin has already set the race IDs — match against today's full race data
