@@ -250,7 +250,24 @@
     Loading today's ITV races...
   </div>
 
-  <!-- Step 0: Filter courses (admin) -->
+  <!-- Step 0: Admin PIN gate -->
+  <div id="step-pin" style="display:none">
+    <div class="card">
+      <div class="card-header">Admin access</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Enter the admin PIN to select this week's races.</p>
+        <div class="form-group">
+          <input type="password" id="admin-pin" placeholder="PIN"
+            style="text-align:center;font-size:20px;letter-spacing:4px"
+            onkeydown="if(event.key==='Enter') checkPin()">
+        </div>
+        <button class="btn btn-green btn-full" onclick="checkPin()">Continue</button>
+        <div id="pin-error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;display:none">Incorrect PIN</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 0b: Filter courses (admin only) -->
   <div id="step-filter" style="display:none">
     <div class="card">
       <div class="card-header">Which courses are on ITV today?</div>
@@ -375,9 +392,27 @@ function showPage(name) {
 // =============================================
 // LOAD RACES
 // =============================================
+var ADMIN_PIN = '1966';  // Change this to whatever PIN you want
+
 function showCourseFilter() {
-  document.getElementById('step-filter').style.display = 'block';
-  renderCourseStep();
+  // Show PIN gate first
+  document.getElementById('step-pin').style.display = 'block';
+  setTimeout(function() {
+    var el = document.getElementById('admin-pin');
+    if (el) el.focus();
+  }, 100);
+}
+
+function checkPin() {
+  var entered = document.getElementById('admin-pin').value;
+  if (entered === ADMIN_PIN) {
+    document.getElementById('step-pin').style.display = 'none';
+    document.getElementById('step-filter').style.display = 'block';
+    renderCourseStep();
+  } else {
+    document.getElementById('pin-error').style.display = 'block';
+    document.getElementById('admin-pin').value = '';
+  }
 }
 
 function renderCourseStep() {
