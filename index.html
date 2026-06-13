@@ -250,6 +250,18 @@
     Loading today's ITV races...
   </div>
 
+  <!-- Step 0: Filter courses (admin) -->
+  <div id="step-filter" style="display:none">
+    <div class="card">
+      <div class="card-header">Which courses are on ITV today?</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Tick the courses being shown on ITV then tap Continue.</p>
+        <div id="course-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+        <button class="btn btn-green btn-full" onclick="applyFilter()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Step 1: Choose player -->
   <div id="step-player" style="display:none">
     <div class="card">
@@ -320,7 +332,8 @@ const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9tyioXeNUUJu0_iI4N
 // STATE
 // =============================================
 let currentPlayer = localStorage.getItem('racing_player') || null;
-let races = [];           // today's ITV races
+let allRaces = [];        // all races from API
+let races = [];           // filtered to ITV courses
 let runners = {};         // race_id -> runners array
 let picks = {};           // player -> race_id -> horse_name
 let submittedPicks = {};  // player -> race_id -> true
@@ -362,6 +375,67 @@ function showPage(name) {
 // =============================================
 // LOAD RACES
 // =============================================
+function showCourseFilter() {
+  document.getElementById('step-filter').style.display = 'block';
+  renderCourseStep();
+}
+
+function renderCourseStep() {
+  const courses = [...new Set(allRaces.map(r => r.course))].sort();
+  const container = document.getElementById('course-checkboxes');
+  document.querySelector('#step-filter .card-header').textContent = 'Step 1: Which courses are on ITV today?';
+  document.querySelector('#step-filter .btn').textContent = 'Next: Pick races →';
+  document.querySelector('#step-filter .btn').onclick = () => renderRaceStep();
+  container.innerHTML = courses.map(c => `
+    <label style="display:flex;align-items:center;gap:6px;padding:8px 12px;
+      border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
+      background:#fff;font-size:14px;font-weight:500;white-space:nowrap">
+      <input type="checkbox" value="${c}" style="width:16px;height:16px;accent-color:var(--green)">
+      ${c}
+    </label>`).join('');
+}
+
+function renderRaceStep() {
+  const checkedCourses = [...document.querySelectorAll('#course-checkboxes input:checked')].map(i => i.value);
+  if (checkedCourses.length === 0) { alert('Please select at least one course.'); return; }
+
+  const container = document.getElementById('course-checkboxes');
+  document.querySelector('#step-filter .card-header').textContent = 'Step 2: Which races are on ITV?';
+  document.querySelector('#step-filter .btn').textContent = 'Start picking →';
+  document.querySelector('#step-filter .btn').onclick = () => applyFilter();
+
+  // Show races grouped by course for the selected courses
+  const courseRaces = allRaces.filter(r => checkedCourses.includes(r.course));
+  const grouped = {};
+  courseRaces.forEach(r => {
+    if (!grouped[r.course]) grouped[r.course] = [];
+    grouped[r.course].push(r);
+  });
+
+  container.innerHTML = Object.entries(grouped).map(([course, cRaces]) => `
+    <div style="width:100%;margin-bottom:4px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+        letter-spacing:0.5px;margin-bottom:6px;margin-top:8px">${course}</div>
+      ${cRaces.map(r => `
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;
+          border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
+          background:#fff;font-size:14px;margin-bottom:6px;width:100%">
+          <input type="checkbox" value="${r.race_id}" style="width:16px;height:16px;accent-color:var(--green);flex-shrink:0">
+          <span><strong>${r.time}</strong> &nbsp;${r.name || ''}</span>
+        </label>`).join('')}
+    </div>`).join('');
+}
+
+function applyFilter() {
+  const checked = [...document.querySelectorAll('#course-checkboxes input:checked')].map(i => i.value);
+  if (checked.length === 0) { alert('Please select at least one race.'); return; }
+  localStorage.setItem('racing_filter_' + weekNumber, JSON.stringify(checked));
+  races = allRaces.filter(r => checked.includes(r.race_id));
+  document.getElementById('step-filter').style.display = 'none';
+  document.getElementById('step-player').style.display = 'block';
+  if (currentPlayer) selectPlayer(currentPlayer, true);
+}
+
 async function loadRaces() {
   try {
     const res = await fetch(`${SCRIPT_URL}?action=getRaces`);
@@ -373,14 +447,14 @@ async function loadRaces() {
       return;
     }
 
-    races = data.races || [];
-    if (races.length === 0) {
-      showNotice('picks', 'No ITV races found for today. Check back on Saturday!', 'warning');
+    allRaces = data.races || [];
+    if (allRaces.length === 0) {
+      showNotice('picks', 'No races found. Check back later!', 'warning');
       return;
     }
 
-    // Pre-cache any runners that came bundled with the races response
-    races.forEach(race => {
+    // Pre-cache runners
+    allRaces.forEach(race => {
       if (race.runners && race.runners.length > 0) {
         runners[race.race_id] = race.runners;
       }
@@ -393,9 +467,16 @@ async function loadRaces() {
       submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
     }
 
-    document.getElementById('step-player').style.display = 'block';
-    if (currentPlayer) {
-      selectPlayer(currentPlayer, true);
+    // Check if we have a saved filter for today
+    const savedFilter = localStorage.getItem('racing_filter_' + weekNumber);
+    if (savedFilter) {
+      const filtered = JSON.parse(savedFilter);
+      races = allRaces.filter(r => filtered.includes(r.race_id));
+      if (races.length === 0) races = allRaces;
+      document.getElementById('step-player').style.display = 'block';
+      if (currentPlayer) selectPlayer(currentPlayer, true);
+    } else {
+      showCourseFilter();
     }
   } catch(e) {
     document.getElementById('picks-loading').innerHTML =
