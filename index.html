@@ -553,7 +553,7 @@ async function loadRaces() {
 // =============================================
 // PLAYER SELECTION
 // =============================================
-function selectPlayer(name, silent) {
+async function selectPlayer(name, silent) {
   currentPlayer = name;
   localStorage.setItem('racing_player', name);
 
@@ -564,6 +564,25 @@ function selectPlayer(name, silent) {
   document.getElementById('step-player').style.display = 'none';
   document.getElementById('step-races').style.display = 'block';
   document.getElementById('picking-as').textContent = 'Picking as: ' + name;
+
+  // Fetch this player's submitted picks from the Sheet and merge into local state
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
+    const data = await res.json();
+    const sheetPicks = (data.picks || []).filter(p => p.player === name);
+    if (sheetPicks.length > 0) {
+      if (!picks[name]) picks[name] = {};
+      if (!submittedPicks[name]) submittedPicks[name] = {};
+      sheetPicks.forEach(p => {
+        picks[name][p.race_id] = p.horse;
+        submittedPicks[name][p.race_id] = true;
+      });
+      localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+      localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+    }
+  } catch(e) {
+    // If fetch fails, fall back to whatever's in localStorage
+  }
 
   renderRaceTabs();
   showRace(0);
