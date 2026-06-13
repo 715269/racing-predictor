@@ -1144,6 +1144,8 @@ async function loadLeaderboard() {
     const picksData = await picksRes.json();
     const allPicks = picksData.picks || [];
 
+    window._thisWeekPicks = allPicks; // cache for drill-down
+
     if (allPicks.length > 0) {
       const weeklyTotals = {};
       allPicks.forEach(p => {
@@ -1157,16 +1159,22 @@ async function loadLeaderboard() {
       sorted.forEach(([player, pts], i) => {
         const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
         const barPct = Math.round((pts / maxW) * 100);
-        html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
-          <div class="lb-rank ${rankClass}" style="flex-shrink:0;width:24px;height:24px;font-size:12px">${i+1}</div>
-          <div style="flex:1">
-            <div style="font-weight:500;font-size:14px">${player}</div>
-            <div style="margin-top:3px;height:3px;background:var(--gray-light);border-radius:2px">
-              <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px"></div>
+        html += `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+              cursor:pointer;user-select:none" onclick="toggleThisWeekDetail('tw_${player}', this)">
+              <div class="lb-rank ${rankClass}" style="flex-shrink:0;width:24px;height:24px;font-size:12px">${i+1}</div>
+              <div style="flex:1">
+                <div style="font-weight:500;font-size:14px">${player}</div>
+                <div style="margin-top:3px;height:3px;background:var(--gray-light);border-radius:2px">
+                  <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px"></div>
+                </div>
+              </div>
+              <span class="points-badge pts-${Math.min(pts,3)}">${pts} pts</span>
+              <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
             </div>
-          </div>
-          <span class="points-badge pts-${Math.min(pts,3)}">${pts} pts</span>
-        </div>`;
+            <div id="tw_${player}" style="display:none;background:var(--gray-light)"></div>
+          </div>`;
       });
       html += '</div></div>';
     }
@@ -1182,6 +1190,70 @@ async function loadLeaderboard() {
 // =============================================
 // UTILITIES
 // =============================================
+// Toggle this-week player drill-down (uses cached picks, no fetch needed)
+function toggleThisWeekDetail(id, header) {
+  const el = document.getElementById(id);
+  const arrow = header.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+
+  if (open) {
+    el.style.display = 'none';
+    if (arrow) arrow.style.transform = '';
+    return;
+  }
+
+  if (arrow) arrow.style.transform = 'rotate(90deg)';
+  el.style.display = 'block';
+
+  // Extract player name from id "tw_PlayerName"
+  const player = id.substring(3);
+  const allPicks = window._thisWeekPicks || [];
+  const weekPicks = allPicks.filter(p => p.player === player)
+    .sort((a, b) => (a.race_time||'').localeCompare(b.race_time||''));
+
+  if (weekPicks.length === 0) {
+    el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">No picks found.</div>';
+    return;
+  }
+
+  const medals = ['🥇','🥈','🥉'];
+  let html = '';
+  weekPicks.forEach(p => {
+    const pts = parseInt(p.points) || 0;
+    const finish = String(p.finish || '—');
+    const finishNum = parseInt(finish);
+    const medal = (!isNaN(finishNum) && finishNum <= 3) ? medals[finishNum-1] : '';
+    const ordinal = !isNaN(finishNum) ? (finishNum===1?'st':finishNum===2?'nd':finishNum===3?'rd':'th') : '';
+    const isPlaced = pts > 0;
+
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
+      border-bottom:1px solid var(--border);
+      background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+      <div style="min-width:40px;font-size:12px;color:var(--text-muted);flex-shrink:0">
+        ${cleanRaceTime(p.race_time||'')}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${p.horse}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${p.course||''}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;min-width:60px">
+        <div style="font-size:12px;color:var(--text-muted)">
+          ${medal} ${finish !== '—' ? finish + ordinal : finish}
+        </div>
+        <span class="points-badge pts-${Math.min(pts,3)}" style="font-size:11px;padding:2px 7px">
+          ${pts}pt${pts!==1?'s':''}
+        </span>
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
 function toggleRaceDetail(id, header) {
   const el = document.getElementById(id);
   const arrow = header.querySelector('.toggle-arrow');
