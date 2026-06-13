@@ -467,7 +467,7 @@ async function applyFilter() {
 
   const selectedRaces = allRaces.filter(r => checked.includes(r.race_id));
 
-  // Save to Sheet so all users get the same races
+  // Save just the race IDs to Sheet (keeps URL short, avoids CORS size limit)
   const btn = document.querySelector('#step-filter .btn');
   btn.disabled = true;
   btn.textContent = 'Saving...';
@@ -476,7 +476,7 @@ async function applyFilter() {
     const params = new URLSearchParams({
       action: 'saveweekraces',
       week: weekNumber,
-      races: encodeURIComponent(JSON.stringify(selectedRaces))
+      raceids: checked.join(',')
     });
     const res = await fetch(`${SCRIPT_URL}?${params.toString()}`);
     const data = await res.json();
@@ -534,9 +534,10 @@ async function loadRaces() {
     const weekRes = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
     const weekData = await weekRes.json();
 
-    if (weekData.races && weekData.races.length > 0) {
-      // Admin has already set the races — use them directly
-      races = weekData.races;
+    if (weekData.raceids && weekData.raceids.length > 0) {
+      // Admin has already set the race IDs — match against today's full race data
+      races = allRaces.filter(r => weekData.raceids.includes(r.race_id));
+      if (races.length === 0) races = allRaces; // fallback
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
