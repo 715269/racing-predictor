@@ -662,23 +662,18 @@ async function submitPick(raceId, course, time, name) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Submitting...';
 
-  const race = races.find(r => r.race_id === raceId);
-
   try {
-    const res = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'submitPick',
-        week: weekNumber,
-        player: currentPlayer,
-        race_id: raceId,
-        course: course,
-        race_time: time,
-        race_name: name,
-        horse_name: horse
-      })
+    const params = new URLSearchParams({
+      action: 'submitpick',
+      week: weekNumber,
+      player: currentPlayer,
+      race_id: raceId,
+      course: course,
+      race_time: time,
+      race_name: name,
+      horse_name: horse
     });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
     const data = await res.json();
     if (data.error) {
       alert(data.error);
@@ -758,14 +753,17 @@ async function submitFromSummary(raceId, course, time, name) {
 
 async function submitPickDirect(raceId, course, time, name, horse) {
   try {
-    const res = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'submitPick', week: weekNumber, player: currentPlayer,
-        race_id: raceId, course, race_time: time, race_name: name, horse_name: horse
-      })
+    const params = new URLSearchParams({
+      action: 'submitpick',
+      week: weekNumber,
+      player: currentPlayer,
+      race_id: raceId,
+      course: course,
+      race_time: time,
+      race_name: name,
+      horse_name: horse
     });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
     const data = await res.json();
     if (!data.error) {
       if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
@@ -862,11 +860,8 @@ async function fetchRaceResults(raceId, week, btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Fetching...';
   try {
-    const res = await fetch(SCRIPT_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'fetchResults', race_id: raceId, week: week })
-    });
+    const params = new URLSearchParams({ action: 'fetchresults', race_id: raceId, week: week });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
     const data = await res.json();
     if (data.error) {
       btn.disabled = false;
