@@ -1098,6 +1098,9 @@ async function loadLeaderboard() {
               <div style="text-align:right;flex-shrink:0">
                 <div style="font-size:22px;font-weight:700;color:var(--green)">${s.total}</div>
                 <div style="font-size:11px;color:var(--text-muted)">pts</div>
+                ${s.wins > 0 ? `<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">
+                  🏆 ${s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)} ${s.wins === 1 ? 'win' : 'wins'}
+                </div>` : ''}
               </div>
               <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
             </div>
@@ -1107,17 +1110,19 @@ async function loadLeaderboard() {
               </div>
               <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">
                 ${(s.weekly||[]).map(w => {
-                  const wkBarPct = Math.round((w.pts / 21) * 100); // max possible ~21
-                  const wkColor = w.pts >= 10 ? 'var(--green)' : w.pts >= 5 ? 'var(--amber)' : 'var(--gray-light)';
-                  const wkTextColor = w.pts >= 5 ? '#fff' : 'var(--text)';
-                  return `<div style="background:#fff;border-radius:8px;padding:8px;text-align:center;
-                    border:1.5px solid ${w.pts > 0 ? 'var(--border)' : 'var(--border)'}">
+                  const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
+                  return `<div onclick="showWeekDetail('${s.player}', ${w.week}, this)"
+                    style="background:#fff;border-radius:8px;padding:8px;text-align:center;
+                    border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"
+                    data-player="${s.player}" data-week="${w.week}">
                     <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ${w.week}</div>
-                    <div style="font-size:16px;font-weight:700;color:${w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)'}">${w.pts}</div>
+                    <div style="font-size:16px;font-weight:700;color:${ptColor}">${w.pts}</div>
                     <div style="font-size:10px;color:var(--text-muted)">pts</div>
                   </div>`;
                 }).join('')}
               </div>
+              <div id="week-detail-${s.player}" style="display:none;margin-top:10px;
+                background:#fff;border-radius:8px;border:1.5px solid var(--border)"></div>
               <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);
                 display:flex;justify-content:space-between;font-size:13px">
                 <span style="color:var(--text-muted)">Best week: <strong>${Math.max(...(s.weekly||[{pts:0}]).map(w=>w.pts))} pts</strong></span>
@@ -1288,6 +1293,96 @@ function showRunnerDetail(sel, raceId) {
 
   detail.innerHTML = parts.join(' &nbsp;·&nbsp; ');
   detail.style.display = 'block';
+}
+
+// Show race-by-race breakdown for a player's specific week
+async function showWeekDetail(player, week, tile) {
+  const detailEl = document.getElementById('week-detail-' + player);
+  if (!detailEl) return;
+
+  // Toggle off if already showing this week
+  if (detailEl.dataset.week === String(week) && detailEl.style.display === 'block') {
+    detailEl.style.display = 'none';
+    detailEl.dataset.week = '';
+    document.querySelectorAll(`[data-player="${player}"]`).forEach(t => {
+      t.style.background = '#fff';
+      t.style.borderColor = 'var(--border)';
+    });
+    return;
+  }
+
+  // Highlight selected tile, reset others
+  document.querySelectorAll(`[data-player="${player}"]`).forEach(t => {
+    t.style.background = '#fff';
+    t.style.borderColor = 'var(--border)';
+  });
+  tile.style.background = 'var(--green-light)';
+  tile.style.borderColor = 'var(--green)';
+
+  detailEl.dataset.week = String(week);
+  detailEl.style.display = 'block';
+  detailEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">Loading...</div>';
+
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${week}`);
+    const data = await res.json();
+    const weekPicks = (data.picks || []).filter(p => p.player === player);
+
+    if (weekPicks.length === 0) {
+      detailEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">No picks found for this week.</div>';
+      return;
+    }
+
+    weekPicks.sort((a, b) => (a.race_time||'').localeCompare(b.race_time||''));
+
+    const medals = ['🥇','🥈','🥉'];
+    const totalPts = weekPicks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
+    const scored = weekPicks.filter(p => parseInt(p.points) > 0).length;
+
+    let html = `<div style="padding:8px 14px;border-bottom:1.5px solid var(--border);
+      font-size:12px;font-weight:600;color:var(--text-muted);
+      display:flex;justify-content:space-between;align-items:center">
+      <span>Week ${week}</span>
+      <span style="color:var(--green)">${totalPts} pts &nbsp;·&nbsp; ${scored}/${weekPicks.length} scored</span>
+    </div>`;
+
+    weekPicks.forEach(p => {
+      const pts = parseInt(p.points) || 0;
+      const finish = String(p.finish || '—');
+      const finishNum = parseInt(finish);
+      const medal = (!isNaN(finishNum) && finishNum <= 3) ? medals[finishNum-1] : '';
+      const ordinal = !isNaN(finishNum) ? (finishNum===1?'st':finishNum===2?'nd':finishNum===3?'rd':'th') : '';
+      const isPlaced = pts > 0;
+
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
+        border-bottom:1px solid var(--border);
+        background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+        <div style="min-width:40px;font-size:12px;color:var(--text-muted);flex-shrink:0">
+          ${cleanRaceTime(p.race_time||'')}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${p.horse}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${p.course||''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:60px">
+          <div style="font-size:12px;color:var(--text-muted)">
+            ${medal} ${finish !== '—' ? finish + ordinal : finish}
+          </div>
+          <span class="points-badge pts-${Math.min(pts,3)}" style="font-size:11px;padding:2px 7px">
+            ${pts}pt${pts!==1?'s':''}
+          </span>
+        </div>
+      </div>`;
+    });
+
+    detailEl.innerHTML = html;
+  } catch(e) {
+    detailEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px">Could not load picks.</div>';
+  }
 }
 
 </script>
