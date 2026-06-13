@@ -565,23 +565,28 @@ async function selectPlayer(name, silent) {
   document.getElementById('step-races').style.display = 'block';
   document.getElementById('picking-as').textContent = 'Picking as: ' + name;
 
-  // Fetch this player's submitted picks from the Sheet and merge into local state
+  // Fetch ALL this week's picks from Sheet and merge into local state
   try {
     const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const data = await res.json();
+    // Get picks for this player (try both exact week match and any week this season)
     const sheetPicks = (data.picks || []).filter(p => p.player === name);
     if (sheetPicks.length > 0) {
       if (!picks[name]) picks[name] = {};
       if (!submittedPicks[name]) submittedPicks[name] = {};
       sheetPicks.forEach(p => {
-        picks[name][p.race_id] = p.horse;
-        submittedPicks[name][p.race_id] = true;
+        const horse = p.horse || '';
+        if (horse) {
+          picks[name][p.race_id] = horse;
+          submittedPicks[name][p.race_id] = true;
+        }
       });
       localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
       localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
     }
   } catch(e) {
     // If fetch fails, fall back to whatever's in localStorage
+    console.log('Could not fetch picks from sheet:', e);
   }
 
   renderRaceTabs();
