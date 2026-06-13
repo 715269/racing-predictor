@@ -639,9 +639,7 @@ async function showRace(idx) {
     return;
   }
   if (myPick) {
-    panel.innerHTML += `<div class="pick-status picked">Your pick: <strong>${myPick}</strong>
-      <button class="btn btn-outline" style="float:right;font-size:12px;padding:4px 10px;margin-top:-2px"
-        onclick="changePick('${race.race_id}')">Change</button></div>`;
+    panel.innerHTML += `<div class="pick-status picked">Your pick: <strong>${myPick}</strong> — tap another horse to change</div>`;
   }
 
   // Load runners if not cached
@@ -670,65 +668,104 @@ async function showRace(idx) {
 
 function renderRunnerPicker(race, submitted) {
   const panel = document.getElementById('race-pick-panel');
-  const existing = panel.innerHTML;
   const raceRunners = runners[race.race_id] || [];
-
   const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
 
-  let html = '';
-  if (!myPick) {
-    html += `
-      <div class="form-group mt-12">
-        <label>Select your horse</label>
-        <select id="horse-select-${race.race_id}"
-          onchange="showRunnerDetail(this, '${race.race_id}')">
-          <option value="">— Choose a horse —</option>
-          ${raceRunners.filter(r => !r.is_nr).map(r =>
-            `<option value="${r.name}">${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' — ' + r.jockey : ''}${r.form ? ' | ' + r.form : ''}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <div id="runner-detail-${race.race_id}" style="display:none;background:var(--green-light);
-        border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>
-      <button class="btn btn-green btn-full mt-8"
-        onclick="savePick('${race.race_id}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}')">
-        Save pick
-      </button>`;
-  } else if (!submitted) {
-    html += `
-      <div class="form-group mt-12">
-        <label>Change your horse</label>
-        <select id="horse-select-${race.race_id}">
-          <option value="">— Choose a different horse —</option>
-          ${raceRunners.filter(r => !r.is_nr).map(r =>
-            `<option value="${r.name}" ${r.name === myPick ? 'selected' : ''}>${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' — ' + r.jockey : ''}${r.form ? ' | ' + r.form : ''}</option>`
-          ).join('')}
-        </select>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:8px">
-        <button class="btn btn-green btn-full"
-          onclick="savePick('${race.race_id}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}')">
-          Update pick
-        </button>
-        <button class="btn btn-green btn-full" style="background:var(--green-mid)"
-          onclick="submitPick('${race.race_id}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}')">
-          Submit ✓
-        </button>
-      </div>`;
-  }
+  const colourMap = {
+    'b':'Bay','br':'Brown','ch':'Chestnut','gr':'Grey','bl':'Black',
+    'ro':'Roan','wh':'White','b/br':'Bay/Brown','gr/ro':'Grey/Roan'
+  };
 
-  // Append to existing panel content (don't wipe pick status banner)
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = existing;
   // Remove old picker if present
-  const oldPicker = tempDiv.querySelector('.runner-picker');
-  if (oldPicker) oldPicker.remove();
+  const old = panel.querySelector('.runner-picker');
+  if (old) old.remove();
+
+  if (submitted) return;
 
   const picker = document.createElement('div');
   picker.className = 'runner-picker';
+
+  const active = raceRunners.filter(r => !r.is_nr);
+  const nrs = raceRunners.filter(r => r.is_nr);
+
+  let html = '<div style="margin-top:12px">';
+
+  active.forEach(r => {
+    const selected = myPick === r.name;
+    const colour = colourMap[(r.colour||'').toLowerCase()] || r.colour || '';
+    const tags = [
+      r.age ? r.age + 'yo' : '',
+      colour,
+      r.draw ? 'Draw ' + r.draw : '',
+      r.ofr  ? 'OR ' + r.ofr : '',
+      r.lbs  ? r.lbs + 'lbs' : '',
+      r.last_run ? r.last_run + 'd ago' : ''
+    ].filter(Boolean).join(' · ');
+
+    html += `
+      <div onclick="selectRunnerCard('${race.race_id}', '${r.name.replace(/'/g,"\\'")}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}', this)"
+        style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:6px;
+          border:2px solid ${selected ? 'var(--green)' : 'var(--border)'};
+          background:${selected ? 'var(--green-light)' : '#fff'};
+          border-radius:10px;cursor:pointer;transition:all 0.15s"
+        data-horse="${r.name}">
+        <div style="min-width:26px;height:26px;border-radius:50%;
+          background:${selected ? 'var(--green)' : 'var(--gray-light)'};
+          color:${selected ? '#fff' : 'var(--gray)'};
+          display:flex;align-items:center;justify-content:center;
+          font-weight:700;font-size:13px;flex-shrink:0">
+          ${r.number || '?'}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px;margin-bottom:2px;
+            color:${selected ? 'var(--green)' : 'var(--text)'}">
+            ${r.name}
+            ${selected ? '<span style="float:right;color:var(--green)">✓</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">
+            ${r.jockey || ''}${r.trainer ? ' · ' + r.trainer : ''}
+          </div>
+          ${tags ? `<div style="font-size:12px;color:var(--text-muted)">${tags}</div>` : ''}
+          ${r.form ? `<div style="font-size:13px;font-weight:500;margin-top:3px;letter-spacing:1px;color:var(--green-mid)">${r.form}</div>` : ''}
+        </div>
+      </div>`;
+  });
+
+  if (nrs.length > 0) {
+    html += `<div style="font-size:12px;color:var(--text-muted);margin-top:8px;padding:6px 10px;
+      background:var(--gray-light);border-radius:6px">
+      <strong>Non-runners:</strong> ${nrs.map(r => r.name).join(', ')}
+    </div>`;
+  }
+
+  html += '</div>';
+
+  if (myPick && !submitted) {
+    html += `<button class="btn btn-green btn-full mt-12"
+      onclick="submitFromSummary('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
+      Submit ${myPick} ✓
+    </button>`;
+  }
+
   picker.innerHTML = html;
   panel.appendChild(picker);
 }
+
+function selectRunnerCard(raceId, horseName, course, time, raceName, el) {
+  // Update picks state
+  if (!picks[currentPlayer]) picks[currentPlayer] = {};
+  picks[currentPlayer][raceId] = horseName;
+  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+
+  // Re-render the picker to show selection
+  const race = races.find(r => r.race_id === raceId);
+  if (race) {
+    renderRunnerPicker(race, false);
+    renderRaceTabs();
+    renderPicksSummary();
+  }
+}
+
 
 function changePick(raceId) {
   const race = races.find(r => r.race_id === raceId);
