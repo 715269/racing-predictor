@@ -461,11 +461,39 @@ function renderRaceStep() {
     </div>`).join('');
 }
 
-function applyFilter() {
+async function applyFilter() {
   const checked = [...document.querySelectorAll('#course-checkboxes input:checked')].map(i => i.value);
   if (checked.length === 0) { alert('Please select at least one race.'); return; }
-  localStorage.setItem('racing_filter_' + weekNumber, JSON.stringify(checked));
-  races = allRaces.filter(r => checked.includes(r.race_id));
+
+  const selectedRaces = allRaces.filter(r => checked.includes(r.race_id));
+
+  // Save to Sheet so all users get the same races
+  const btn = document.querySelector('#step-filter .btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    const params = new URLSearchParams({
+      action: 'saveweekraces',
+      week: weekNumber,
+      races: encodeURIComponent(JSON.stringify(selectedRaces))
+    });
+    const res = await fetch(`${SCRIPT_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      alert('Error saving races: ' + data.error);
+      btn.disabled = false;
+      btn.textContent = 'Start picking →';
+      return;
+    }
+  } catch(e) {
+    alert('Network error saving races. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Start picking →';
+    return;
+  }
+
+  races = selectedRaces;
   document.getElementById('step-filter').style.display = 'none';
   document.getElementById('step-player').style.display = 'block';
   if (currentPlayer) selectPlayer(currentPlayer, true);
@@ -502,15 +530,17 @@ async function loadRaces() {
       submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
     }
 
-    // Check if we have a saved filter for today
-    const savedFilter = localStorage.getItem('racing_filter_' + weekNumber);
-    if (savedFilter) {
-      const filtered = JSON.parse(savedFilter);
-      races = allRaces.filter(r => filtered.includes(r.race_id));
-      if (races.length === 0) races = allRaces;
+    // Check Sheet for this week's admin-selected races
+    const weekRes = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
+    const weekData = await weekRes.json();
+
+    if (weekData.races && weekData.races.length > 0) {
+      // Admin has already set the races — use them directly
+      races = weekData.races;
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
+      // No races set yet — show admin PIN gate
       showCourseFilter();
     }
   } catch(e) {
