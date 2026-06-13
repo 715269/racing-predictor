@@ -314,7 +314,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuXlmg7vXLNK-c3VW1kySt_UQ5mfsAJ3XImULpsHwQYKD1D4BDQzYFQGLnUAQ-nq4n/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyxj6GsIrp16FQJHUSJ444MjXSaxyVrS-1e3gYloEy_3998680ahGHdOMw67Uz5upAURQ/exec';
 
 // =============================================
 // STATE
@@ -480,7 +480,11 @@ async function showRace(idx) {
       const res = await fetch(`${SCRIPT_URL}?action=getRunners&race_id=${encodeURIComponent(race.race_id)}`);
       const data = await res.json();
       if (data.error) {
-        panel.innerHTML += `<p style="color:var(--red)">${data.error}</p>`;
+        const isPlanError = (data.error||'').toLowerCase().includes('basic plan');
+        panel.innerHTML += isPlanError
+          ? `<div class="notice error" style="margin-top:8px">⚠ Runners need a Racing API Basic plan (~£10/mo at theracingapi.com). Type your horse name below instead.</div>`
+          : `<p style="color:var(--red)">${data.error}</p>`;
+        if (isPlanError) renderManualEntry(race);
         return;
       }
       runners[race.race_id] = data.runners || [];
@@ -875,6 +879,38 @@ function showNotice(page, msg, type) {
   el.innerHTML = msg;
   el.style.display = 'block';
 }
+
+// Manual horse name entry fallback (used when API runners unavailable)
+function renderManualEntry(race) {
+  const panel = document.getElementById('race-pick-panel');
+  const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
+  panel.innerHTML += `
+    <div class="form-group mt-12">
+      <label>Type horse name manually</label>
+      <input type="text" id="manual-horse-${race.race_id}"
+        placeholder="e.g. Diligent Harry"
+        value="${myPick || ''}"
+        style="text-transform:uppercase">
+    </div>
+    <button class="btn btn-green btn-full mt-8"
+      onclick="saveManualPick('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')" >
+      Save pick
+    </button>`;
+}
+
+function saveManualPick(raceId, course, time, name) {
+  const inp = document.getElementById('manual-horse-' + raceId);
+  if (!inp || !inp.value.trim()) return;
+  if (!picks[currentPlayer]) picks[currentPlayer] = {};
+  picks[currentPlayer][raceId] = inp.value.trim().toUpperCase();
+  // Store a fake runner so submit works
+  if (!runners[raceId]) runners[raceId] = [{ name: inp.value.trim().toUpperCase(), number:'', jockey:'', is_nr:false }];
+  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  renderRaceTabs();
+  showRace(currentRaceIdx);
+  renderPicksSummary();
+}
+
 </script>
 </body>
 </html>
