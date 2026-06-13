@@ -680,13 +680,16 @@ function renderRunnerPicker(race, submitted) {
     html += `
       <div class="form-group mt-12">
         <label>Select your horse</label>
-        <select id="horse-select-${race.race_id}">
+        <select id="horse-select-${race.race_id}"
+          onchange="showRunnerDetail(this, '${race.race_id}')">
           <option value="">— Choose a horse —</option>
           ${raceRunners.filter(r => !r.is_nr).map(r =>
-            `<option value="${r.name}">${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' (' + r.jockey + ')' : ''}</option>`
+            `<option value="${r.name}">${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' — ' + r.jockey : ''}${r.form ? ' | ' + r.form : ''}</option>`
           ).join('')}
         </select>
       </div>
+      <div id="runner-detail-${race.race_id}" style="display:none;background:var(--green-light);
+        border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:13px;line-height:1.7"></div>
       <button class="btn btn-green btn-full mt-8"
         onclick="savePick('${race.race_id}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}')">
         Save pick
@@ -698,7 +701,7 @@ function renderRunnerPicker(race, submitted) {
         <select id="horse-select-${race.race_id}">
           <option value="">— Choose a different horse —</option>
           ${raceRunners.filter(r => !r.is_nr).map(r =>
-            `<option value="${r.name}" ${r.name === myPick ? 'selected' : ''}>${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' (' + r.jockey + ')' : ''}</option>`
+            `<option value="${r.name}" ${r.name === myPick ? 'selected' : ''}>${r.number ? r.number + '. ' : ''}${r.name}${r.jockey ? ' — ' + r.jockey : ''}${r.form ? ' | ' + r.form : ''}</option>`
           ).join('')}
         </select>
       </div>
@@ -1075,6 +1078,37 @@ function saveManualPick(raceId, course, time, name) {
   renderRaceTabs();
   showRace(currentRaceIdx);
   renderPicksSummary();
+}
+
+
+function showRunnerDetail(sel, raceId) {
+  const detail = document.getElementById('runner-detail-' + raceId);
+  if (!detail) return;
+  const horseName = sel.value;
+  if (!horseName) { detail.style.display = 'none'; return; }
+
+  const raceRunners = runners[raceId] || [];
+  const h = raceRunners.find(r => r.name === horseName);
+  if (!h) { detail.style.display = 'none'; return; }
+
+  const colourMap = {
+    'b': 'Bay', 'br': 'Brown', 'ch': 'Chestnut', 'gr': 'Grey',
+    'bl': 'Black', 'ro': 'Roan', 'wh': 'White', 'b/br': 'Bay/Brown'
+  };
+  const colourLabel = colourMap[(h.colour||'').toLowerCase()] || h.colour || '';
+
+  const parts = [];
+  if (h.age)      parts.push('<strong>Age:</strong> ' + h.age);
+  if (colourLabel) parts.push('<strong>Colour:</strong> ' + colourLabel);
+  if (h.trainer)  parts.push('<strong>Trainer:</strong> ' + h.trainer);
+  if (h.draw)     parts.push('<strong>Draw:</strong> ' + h.draw);
+  if (h.lbs)      parts.push('<strong>Weight:</strong> ' + h.lbs + 'lbs');
+  if (h.ofr)      parts.push('<strong>OR:</strong> ' + h.ofr);
+  if (h.form)     parts.push('<strong>Form:</strong> ' + h.form);
+  if (h.last_run) parts.push('<strong>Last run:</strong> ' + h.last_run + ' days ago');
+
+  detail.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+  detail.style.display = 'block';
 }
 
 </script>
