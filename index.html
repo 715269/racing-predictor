@@ -314,7 +314,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxbEDJNInJIXdhpxHzIqb_5S5loe6LBEd7JJbA8HAVoEUTPg6RrPpU478kqH2IYWwbzpQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzuXlmg7vXLNK-c3VW1kySt_UQ5mfsAJ3XImULpsHwQYKD1D4BDQzYFQGLnUAQ-nq4n/exec';
 
 // =============================================
 // STATE
@@ -378,6 +378,13 @@ async function loadRaces() {
       showNotice('picks', 'No ITV races found for today. Check back on Saturday!', 'warning');
       return;
     }
+
+    // Pre-cache any runners that came bundled with the races response
+    races.forEach(race => {
+      if (race.runners && race.runners.length > 0) {
+        runners[race.race_id] = race.runners;
+      }
+    });
 
     // Load any existing picks from localStorage
     const saved = localStorage.getItem('racing_picks_' + weekNumber);
