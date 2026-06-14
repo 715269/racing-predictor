@@ -678,12 +678,15 @@ async function selectPlayer(name, silent) {
   document.getElementById('step-races').style.display = 'block';
   document.getElementById('picking-as').textContent = 'Picking as: ' + name;
 
-  // Fetch ALL this week's picks from Sheet and merge into local state
+  // Fetch this week's picks from Sheet, but only keep ones matching TODAY's races
+  // (the week number can span multiple race days due to ISO week boundaries)
   try {
     const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const data = await res.json();
-    // Get picks for this player (try both exact week match and any week this season)
-    const sheetPicks = (data.picks || []).filter(p => p.player === name);
+    const todayRaceIds = races.map(r => r.race_id);
+    const sheetPicks = (data.picks || []).filter(p =>
+      p.player === name && todayRaceIds.includes(p.race_id)
+    );
     if (sheetPicks.length > 0) {
       if (!picks[name]) picks[name] = {};
       if (!submittedPicks[name]) submittedPicks[name] = {};
@@ -1010,8 +1013,12 @@ function renderPicksSummary() {
 async function submitFromSummary(raceId, course, time, name) {
   const horse = picks[currentPlayer] && picks[currentPlayer][raceId];
   if (!horse) return;
-  const fakeEvent = { target: event.target };
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
   await submitPickDirect(raceId, course, time, name, horse);
+  renderPicksSummary(); // re-renders the whole table including this button
 }
 
 async function submitPickDirect(raceId, course, time, name, horse) {
@@ -1041,7 +1048,13 @@ async function submitAll() {
   const unsent = races.filter(r => playerPicks[r.race_id] &&
     !(submittedPicks[currentPlayer] && submittedPicks[currentPlayer][r.race_id]));
 
-  for (const race of unsent) {
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+
+  for (let i = 0; i < unsent.length; i++) {
+    const race = unsent[i];
+    btn.innerHTML = `<span class="spinner"></span> Submitting ${i+1} of ${unsent.length}...`;
     await submitPickDirect(race.race_id, race.course, formatTime(race.time),
       race.name || '', playerPicks[race.race_id]);
   }
@@ -1057,9 +1070,12 @@ async function loadResults() {
   document.getElementById('results-loading').style.display = 'block';
   try {
     // Get all picks for this week across all players
-    const picksRes = await fetch(`${SCRIPT_URL}?action=getPicks&week=${weekNumber}`);
+    const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const picksData = await picksRes.json();
-    const allPicks = picksData.picks || [];
+    // Only show picks for races on today's card (avoids stale data from
+    // a previous race day that falls in the same ISO week)
+    const todayRaceIds = races.map(r => r.race_id);
+    const allPicks = (picksData.picks || []).filter(p => todayRaceIds.includes(p.race_id));
 
     if (allPicks.length === 0) {
       document.getElementById('results-content').innerHTML =
@@ -1250,7 +1266,8 @@ async function loadLeaderboard() {
     // This week summary
     const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const picksData = await picksRes.json();
-    const allPicks = picksData.picks || [];
+    const todayRaceIds = races.map(r => r.race_id);
+    const allPicks = (picksData.picks || []).filter(p => todayRaceIds.includes(p.race_id));
 
     window._thisWeekPicks = allPicks; // cache for drill-down
 
