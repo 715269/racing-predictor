@@ -241,6 +241,7 @@
   <button class="active" onclick="showPage('picks')">Pick</button>
   <button onclick="showPage('results')">Results</button>
   <button onclick="showPage('leaderboard')">Season</button>
+  <button onclick="showPage('admin')">Admin</button>
 </nav>
 
 <!-- PICKS PAGE -->
@@ -339,6 +340,39 @@
   </div>
 </div>
 
+<!-- ADMIN PAGE -->
+<div id="page-admin" class="page">
+  <div id="admin-pin-gate">
+    <div class="card">
+      <div class="card-header">Admin access</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Enter the admin PIN to access admin tools.</p>
+        <div class="form-group">
+          <input type="password" id="admin-tab-pin" placeholder="PIN"
+            style="text-align:center;font-size:20px;letter-spacing:4px"
+            onkeydown="if(event.key==='Enter') checkAdminTabPin()">
+        </div>
+        <button class="btn btn-green btn-full" onclick="checkAdminTabPin()">Unlock</button>
+        <div id="admin-tab-pin-error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;display:none">Incorrect PIN</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-tools" style="display:none">
+    <div class="card">
+      <div class="card-header">This week's races — Week <span id="admin-week-num"></span></div>
+      <div class="card-body">
+        <div id="admin-current-races" style="margin-bottom:14px"></div>
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">
+          If the wrong courses or races were selected, you can reset and choose again.
+          Everyone will see the new selection next time they open the app.
+        </p>
+        <button class="btn btn-amber btn-full" onclick="resetWeekRaces()">Reset & re-pick races for this week</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
@@ -387,6 +421,80 @@ function showPage(name) {
   event.target.classList.add('active');
   if (name === 'results') loadResults();
   if (name === 'leaderboard') loadLeaderboard();
+  if (name === 'admin') initAdminTab();
+}
+
+// =============================================
+// ADMIN TAB
+// =============================================
+function checkAdminTabPin() {
+  const entered = document.getElementById('admin-tab-pin').value;
+  if (entered === ADMIN_PIN) {
+    document.getElementById('admin-pin-gate').style.display = 'none';
+    document.getElementById('admin-tools').style.display = 'block';
+    loadAdminCurrentRaces();
+  } else {
+    document.getElementById('admin-tab-pin-error').style.display = 'block';
+    document.getElementById('admin-tab-pin').value = '';
+  }
+}
+
+function initAdminTab() {
+  document.getElementById('admin-week-num').textContent = weekNumber;
+  // Reset to PIN gate each time the tab is opened
+  document.getElementById('admin-pin-gate').style.display = 'block';
+  document.getElementById('admin-tools').style.display = 'none';
+  document.getElementById('admin-tab-pin').value = '';
+  document.getElementById('admin-tab-pin-error').style.display = 'none';
+}
+
+async function loadAdminCurrentRaces() {
+  const container = document.getElementById('admin-current-races');
+  container.innerHTML = '<p class="text-muted" style="font-size:13px">Loading...</p>';
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
+    const data = await res.json();
+    if (data.raceids && data.raceids.length > 0 && allRaces.length > 0) {
+      const selected = allRaces.filter(r => data.raceids.includes(r.race_id));
+      if (selected.length > 0) {
+        container.innerHTML = '<p style="font-size:13px;font-weight:600;margin-bottom:8px">Currently selected:</p>' +
+          selected.map(r => `<div style="font-size:13px;padding:4px 0;color:var(--text-muted)">
+            ${cleanRaceTime(r.time)} ${r.course} — ${r.name||''}
+          </div>`).join('');
+        return;
+      }
+    }
+    container.innerHTML = '<p class="text-muted" style="font-size:13px">No races saved yet for this week.</p>';
+  } catch(e) {
+    container.innerHTML = '<p style="color:var(--red);font-size:13px">Could not load current selection.</p>';
+  }
+}
+
+async function resetWeekRaces() {
+  if (!confirm('Reset this week\\'s race selection? You\\'ll be taken to the course picker again.')) return;
+
+  try {
+    const params = new URLSearchParams({
+      action: 'saveweekraces',
+      week: weekNumber,
+      raceids: '' // empty = cleared
+    });
+    await fetch(`${SCRIPT_URL}?${params.toString()}`);
+
+    // Reload the Pick tab to trigger the filter flow
+    document.getElementById('step-player').style.display = 'none';
+    document.getElementById('step-races').style.display = 'none';
+    document.getElementById('step-filter').style.display = 'none';
+    document.getElementById('step-pin').style.display = 'none';
+
+    showCourseFilter();
+    showPage('picks');
+    // Manually set the active nav button since showPage relies on event.target
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelector('nav button').classList.add('active');
+  } catch(e) {
+    alert('Could not reset races. Please try again.');
+  }
 }
 
 // =============================================
