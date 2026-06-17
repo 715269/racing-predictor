@@ -1201,21 +1201,33 @@ async function loadResults() {
       let podiumHtml = '';
       if (hasResults) {
         const medals = ['🥇','🥈','🥉'];
+        const pickedHorses = new Set(raceData.picks.map(p => (p.horse||'').toLowerCase()));
         const seen = new Set();
         const top3 = [];
         raceData.picks.slice()
           .sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99))
           .forEach(p => {
             const pos = parseInt(p.finish);
-            if (pos >= 1 && pos <= 3 && !seen.has(pos)) {
-              seen.add(pos);
-              top3.push(p);
-            }
+            if (pos >= 1 && pos <= 3 && !seen.has(pos)) { seen.add(pos); top3.push(p); }
           });
+        top3.sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99));
         if (top3.length > 0) {
-          podiumHtml = '<div style="margin-top:4px;font-size:11px;opacity:0.9">' +
-            top3.map((p,i) => medals[i] + ' ' + p.horse + (p.sp ? ' (' + p.sp + ')' : '')).join('  ') +
-          '</div>';
+          podiumHtml = '<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px">' +
+            top3.map(p => {
+              const pos = parseInt(p.finish);
+              const isPicked = pickedHorses.has((p.horse||'').toLowerCase());
+              const pickers = raceData.picks.filter(pk =>
+                (pk.horse||'').toLowerCase() === (p.horse||'').toLowerCase()
+              ).map(pk => pk.player).join(', ');
+              return '<div style="font-size:11px;display:flex;align-items:center;gap:5px">' +
+                medals[pos-1] + ' ' +
+                '<span style="font-weight:' + (isPicked ? '700' : '400') + ';' +
+                (isPicked ? 'color:#fff' : 'opacity:0.85') + '">' + p.horse + '</span>' +
+                (p.sp ? '<span style="opacity:0.6;font-size:10px">(' + p.sp + ')</span>' : '') +
+                (isPicked ? '<span style="font-size:10px;background:rgba(255,255,255,0.25);' +
+                  'padding:1px 5px;border-radius:8px">' + pickers + '</span>' : '') +
+              '</div>';
+            }).join('') + '</div>';
         }
       }
 
@@ -1495,6 +1507,16 @@ function toggleThisWeekDetail(id, header) {
   });
 
   el.innerHTML = html;
+}
+
+
+// Store full race results keyed by race_id for podium display
+const raceResults = {};
+
+function handleRaceCardClick(el) {
+  const raceId = el.dataset.raceid;
+  if (!raceId) return;
+  toggleRaceDetail('rd_' + raceId, el);
 }
 
 function toggleRaceDetail(id, header) {
