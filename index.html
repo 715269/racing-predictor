@@ -1534,6 +1534,14 @@ function toggleThisWeekDetail(id, header) {
 // Store full race results keyed by race_id for podium display
 const raceResults = {};
 
+function toggleBreakdown(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) { console.log('Breakdown element not found:', id); return; }
+  const open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? 'detail' : 'hide';
+}
+
 function handleRaceCardClick(el) {
   const raceId = el.dataset.raceid;
   if (!raceId) return;
@@ -1758,7 +1766,7 @@ async function showWeekDetail(player, week, tile) {
 // 0 = draw doesn't matter much (e.g. right-handed galloping tracks)
 const DRAW_BIAS = {
   'Chester':        -2.5,  // Very tight track, low draws strongly favoured
-  'Ascot':           0.0,  // Straight 5f high draws, round course neutral
+  'Ascot':           1.5,  // Straight course (5-6f) strongly favours HIGH draws (stands rail)
   'York':           -1.0,  // Soft ground favours low, fast ground high
   'Sandown':        -0.5,
   'Haydock':        -0.5,
@@ -1791,15 +1799,18 @@ const DRAW_BIAS = {
 const TOP_TRAINERS = {
   // UK flat elite
   "John Gosden": 2, "Charlie Appleby": 2, "Aidan O'Brien": 2,
+  "A P O'Brien": 2, "Joseph O'Brien": 1.5, "AP O'Brien": 2,
   "Roger Varian": 1.5, "William Haggas": 1.5, "Andrew Balding": 1,
   "Ralph Beckett": 1, "Richard Hannon": 1, "Mark Johnston": 1,
   "Kevin Ryan": 1, "Clive Cox": 1, "Tim Easterby": 0.5,
   "David Menuisier": 1, "John & Thady Gosden": 2,
+  "Simon & Ed Crisford": 1, "Ed Crisford": 1, "Simon Crisford": 1,
+  "Karl Burke": 1, "Hugo Palmer": 0.5, "James Owen": 0.5,
+  "Harry Eustace": 0.5, "George Boughey": 0.5, "Wesley A Ward": 1,
+  "Dermot Weld": 1, "Gavin Cromwell": 0.5,
   // UK jumps
   "Willie Mullins": 2, "Nicky Henderson": 2, "Paul Nicholls": 1.5,
   "Dan Skelton": 1, "Kim Bailey": 0.5,
-  // Irish
-  "Joseph O'Brien": 1.5, "Dermot Weld": 1, "Gavin Cromwell": 0.5,
 };
 
 // Top jockeys — bonus points
