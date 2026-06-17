@@ -1167,6 +1167,15 @@ async function loadResults() {
     // Get all picks for this week across all players
     const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
     const picksData = await picksRes.json();
+    // Fetch actual top 3 finishers for all races this week
+    try {
+      const t3Res = await fetch(`${SCRIPT_URL}?action=gettop3&week=${weekNumber}`);
+      const t3Data = await t3Res.json();
+      if (t3Data.top3ByRace) {
+        Object.assign(raceResults, t3Data.top3ByRace);
+      }
+    } catch(e) { console.log('top3 fetch failed:', e); }
+
     // Only show picks for races on today's card (avoids stale data from
     // a previous race day that falls in the same ISO week)
     const todayRaceIds = races.map(r => r.race_id);
@@ -1231,7 +1240,7 @@ async function loadResults() {
                 medals[h.position - 1] + ' ' +
                 '<span style="font-weight:' + (isPicked ? '700' : '400') + ';' +
                 (isPicked ? 'color:#fff' : 'opacity:0.85') + '">' + h.horse + '</span>' +
-                (h.sp ? '<span style="opacity:0.6;font-size:10px">(' + h.sp + ')</span>' : '') +
+                // SP not available on free tier
                 (isPicked ? '<span style="font-size:10px;background:rgba(255,255,255,0.25);' +
                   'padding:1px 5px;border-radius:8px">' + pickers + '</span>' : '') +
               '</div>';
