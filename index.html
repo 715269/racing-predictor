@@ -1201,29 +1201,37 @@ async function loadResults() {
       let podiumHtml = '';
       if (hasResults) {
         const medals = ['🥇','🥈','🥉'];
+        // Use cached actual results if available, otherwise derive from picks
+        let top3 = raceResults[raceId] || [];
+        if (top3.length === 0) {
+          // Derive from picks — get unique top 3 positions
+          const seen = new Set();
+          raceData.picks.slice()
+            .sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99))
+            .forEach(p => {
+              const pos = parseInt(p.finish);
+              if (pos >= 1 && pos <= 3 && !seen.has(pos)) {
+                seen.add(pos);
+                top3.push({ position: pos, horse: p.horse, sp: p.sp || '' });
+              }
+            });
+        }
+
+        // Build set of picked horses for highlighting
         const pickedHorses = new Set(raceData.picks.map(p => (p.horse||'').toLowerCase()));
-        const seen = new Set();
-        const top3 = [];
-        raceData.picks.slice()
-          .sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99))
-          .forEach(p => {
-            const pos = parseInt(p.finish);
-            if (pos >= 1 && pos <= 3 && !seen.has(pos)) { seen.add(pos); top3.push(p); }
-          });
-        top3.sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99));
+
         if (top3.length > 0) {
           podiumHtml = '<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px">' +
-            top3.map(p => {
-              const pos = parseInt(p.finish);
-              const isPicked = pickedHorses.has((p.horse||'').toLowerCase());
-              const pickers = raceData.picks.filter(pk =>
-                (pk.horse||'').toLowerCase() === (p.horse||'').toLowerCase()
-              ).map(pk => pk.player).join(', ');
+            top3.map(h => {
+              const isPicked = pickedHorses.has((h.horse||'').toLowerCase());
+              const pickers = isPicked ? raceData.picks
+                .filter(p => (p.horse||'').toLowerCase() === (h.horse||'').toLowerCase())
+                .map(p => p.player).join(', ') : '';
               return '<div style="font-size:11px;display:flex;align-items:center;gap:5px">' +
-                medals[pos-1] + ' ' +
+                medals[h.position - 1] + ' ' +
                 '<span style="font-weight:' + (isPicked ? '700' : '400') + ';' +
-                (isPicked ? 'color:#fff' : 'opacity:0.85') + '">' + p.horse + '</span>' +
-                (p.sp ? '<span style="opacity:0.6;font-size:10px">(' + p.sp + ')</span>' : '') +
+                (isPicked ? 'color:#fff' : 'opacity:0.85') + '">' + h.horse + '</span>' +
+                (h.sp ? '<span style="opacity:0.6;font-size:10px">(' + h.sp + ')</span>' : '') +
                 (isPicked ? '<span style="font-size:10px;background:rgba(255,255,255,0.25);' +
                   'padding:1px 5px;border-radius:8px">' + pickers + '</span>' : '') +
               '</div>';
@@ -1313,6 +1321,10 @@ async function fetchRaceResults(raceId, week, btn) {
       btn.textContent = 'Fetch results';
       alert(data.error);
       return;
+    }
+    // Cache actual top 3 finishers for podium display
+    if (data.top3 && data.top3.length > 0) {
+      raceResults[raceId] = data.top3;
     }
     loadResults();
     loadLeaderboard();
