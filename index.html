@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx63kMD0LH37enIYrHt0IiaERqUvhqstHiu19SDXC9PN-Z19Z51oVucuY8Oh2KQkN7KwQ/exec';
+const SCRIPT_URL = 'PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE';
 
 // =============================================
 // STATE
@@ -801,7 +801,7 @@ async function showRace(idx) {
   renderRunnerPicker(race, submitted);
 }
 
-function renderRunnerPicker(race, submitted) {
+function renderRunnerPicker(race, submitted, sortMode) {
   const panel = document.getElementById('race-pick-panel');
   const raceRunners = runners[race.race_id] || [];
   const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
@@ -820,14 +820,62 @@ function renderRunnerPicker(race, submitted) {
   const picker = document.createElement('div');
   picker.className = 'runner-picker';
 
-  const active = raceRunners.filter(r => !r.is_nr);
+  let active = raceRunners.filter(r => !r.is_nr);
   const nrs = raceRunners.filter(r => r.is_nr);
 
-  let html = '<div style="margin-top:12px">';
+  // Sort mode: 'number' (cloth, default), 'or' (official rating desc), 'form' (recent form)
+  sortMode = sortMode || race._sortMode || 'score';
+  race._sortMode = sortMode;
+
+  // Pre-compute scores for all runners (needed for sort and display)
+  const fieldSize = active.length;
+  const scores = {};
+  active.forEach(r => {
+    scores[r.name] = scoreRunner(r, fieldSize, race.course, active);
+  });
+  const maxScore = Math.max(...Object.values(scores).map(s => s.total), 1);
+
+  if (sortMode === 'score') {
+    active = [...active].sort((a, b) => scores[b.name].total - scores[a.name].total);
+  } else if (sortMode === 'or') {
+    active = [...active].sort((a, b) => {
+      const oa = parseInt(a.ofr) || 0, ob = parseInt(b.ofr) || 0;
+      return ob - oa;
+    });
+  } else if (sortMode === 'form') {
+    active = [...active].sort((a, b) => {
+      const fa = parseInt((a.form||'').replace(/[^0-9]/g,'')[0]) || 9;
+      const fb = parseInt((b.form||'').replace(/[^0-9]/g,'')[0]) || 9;
+      return fa - fb;
+    });
+  } else {
+    active = [...active].sort((a,b) => (parseInt(a.number)||99)-(parseInt(b.number)||99));
+  }
+
+  // Find top OR horse as "top rated" indicator
+  const topOR = Math.max(...active.map(r => parseInt(r.ofr)||0));
+
+  // Sort toggle
+  let html = `<div style="display:flex;gap:6px;margin-bottom:10px;margin-top:4px">
+    <span style="font-size:12px;color:var(--text-muted);align-self:center;margin-right:4px">Sort:</span>
+    ${['score','number','or','form'].map(m => `
+      <button onclick="renderRunnerPicker(races.find(r=>r.race_id==='${race.race_id}'), false, '${m}')"
+        style="padding:4px 10px;border-radius:12px;border:1.5px solid ${sortMode===m?'var(--green)':'var(--border)'};
+        background:${sortMode===m?'var(--green)':'#fff'};color:${sortMode===m?'#fff':'var(--text-muted)'};
+        font-size:12px;font-weight:500;cursor:pointer">
+        ${{score:'⚡ Score',number:'No.',or:'Rating',form:'Form'}[m]}
+      </button>`).join('')}
+  </div><div>`;
 
   active.forEach(r => {
     const selected = myPick === r.name;
     const colour = colourMap[(r.colour||'').toLowerCase()] || r.colour || '';
+    const orVal = parseInt(r.ofr) || 0;
+    const isTopRated = orVal > 0 && orVal === topOR;
+    const runnerScore = scores[r.name] || { total: 0, max: 52, breakdown: [] };
+    const scorePct = Math.round((runnerScore.total / maxScore) * 100);
+    const scoreRank = active.indexOf(r) + 1;
+    const isTopScore = scoreRank === 1 && sortMode === 'score';
     const tags = [
       r.age ? r.age + 'yo' : '',
       colour,
@@ -855,13 +903,53 @@ function renderRunnerPicker(race, submitted) {
           <div style="font-weight:600;font-size:15px;margin-bottom:2px;
             color:${selected ? 'var(--green)' : 'var(--text)'}">
             ${r.name}
+            ${isTopRated ? '<span style="font-size:10px;background:var(--amber);color:#fff;padding:1px 5px;border-radius:8px;font-weight:600;margin-left:6px">TOP RATED</span>' : ''}
             ${selected ? '<span style="float:right;color:var(--green)">✓</span>' : ''}
           </div>
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">
             ${r.jockey || ''}${r.trainer ? ' · ' + r.trainer : ''}
           </div>
           ${tags ? `<div style="font-size:12px;color:var(--text-muted)">${tags}</div>` : ''}
-          ${r.form ? `<div style="font-size:13px;font-weight:500;margin-top:3px;letter-spacing:1px;color:var(--green-mid)">${r.form}</div>` : ''}
+          ${r.form || r.ofr ? `<div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
+            ${r.form ? `<span style="font-size:13px;font-weight:500;letter-spacing:1px;color:var(--green-mid)">${r.form}</span>` : ''}
+            ${parseInt(r.ofr) > 0 ? `<span style="font-size:11px;background:var(--gray-light);padding:1px 6px;border-radius:8px;color:var(--gray)">OR ${r.ofr}</span>` : ''}
+          </div>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+            <div style="height:4px;flex:1;background:var(--gray-light);border-radius:2px;overflow:hidden">
+              <div style="width:${scorePct}%;height:100%;border-radius:2px;
+                background:${scoreRank===1?'var(--amber)':scoreRank<=3?'var(--green)':'var(--border)'}">
+              </div>
+            </div>
+            <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;flex-shrink:0">
+              ${runnerScore.total.toFixed(0)}/52
+              ${isTopScore ? ' ⭐' : ''}
+            </span>
+            <button onclick="event.stopPropagation();toggleBreakdown('bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}', this)"
+              style="font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);
+              border-radius:6px;padding:1px 6px;cursor:pointer;flex-shrink:0">
+              detail
+            </button>
+          </div>
+          <div id="bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}"
+            style="display:none;margin-top:8px;padding:8px;background:var(--gray-light);
+            border-radius:8px;font-size:12px">
+            ${runnerScore.breakdown.map(b => `
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+                <span style="min-width:90px;color:var(--text-muted)">${b.label}</span>
+                <div style="flex:1;height:3px;background:#ddd;border-radius:2px;overflow:hidden">
+                  <div style="width:${Math.round((b.score/b.max)*100)}%;height:100%;
+                    background:${b.score>=b.max*0.7?'var(--green)':b.score>=b.max*0.4?'var(--amber)':'var(--red)'};
+                    border-radius:2px"></div>
+                </div>
+                <span style="min-width:28px;text-align:right;font-weight:600">${b.score}/${b.max}</span>
+                <span style="color:var(--text-muted);min-width:0;font-size:11px">${b.detail}</span>
+              </div>`).join('')}
+            <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
+              display:flex;justify-content:space-between;font-weight:600;font-size:12px">
+              <span>Total score</span>
+              <span style="color:var(--green)">${runnerScore.total.toFixed(1)} / 52</span>
+            </div>
+          </div>
         </div>
       </div>`;
   });
@@ -1102,26 +1190,49 @@ async function loadResults() {
       const hasResults = raceData.picks.some(p => p.finish !== '' && p.finish !== undefined);
       const weekPts = raceData.picks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
 
-      html += `<div class="card" style="margin-bottom:10px">
-        <div class="card-header" style="cursor:pointer;user-select:none"
-          onclick="toggleRaceDetail('rd_${raceId}', this)">
-          <div>
-            <span style="font-weight:600">${raceData.course}</span>
-            <span class="time" style="margin-left:8px">${cleanRaceTime(raceData.time)}</span>
-            ${raceData.name ? `<div style="font-size:11px;opacity:0.8;font-weight:400;margin-top:2px">${raceData.name}</div>` : ''}
-          </div>
-          <div style="display:flex;align-items:center;gap:10px">
-            ${hasResults
-              ? `<span style="font-size:12px;opacity:0.85">${weekPts} pts total</span>`
-              : `<button class="btn btn-amber" style="font-size:12px;padding:5px 11px"
-                  onclick="event.stopPropagation();fetchRaceResults('${raceId}',${weekNumber},this)">
-                  Fetch results
-                </button>`}
-            <span class="toggle-arrow" style="font-size:16px;transition:transform 0.2s">›</span>
-          </div>
-        </div>
-        <div id="rd_${raceId}" style="display:none">
-          <div class="card-body" style="padding:0">`;
+      // Build 1-2-3 podium summary for card header
+      let podiumHtml = '';
+      if (hasResults) {
+        const medals = ['🥇','🥈','🥉'];
+        const seen = new Set();
+        const top3 = [];
+        raceData.picks.slice()
+          .sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99))
+          .forEach(p => {
+            const pos = parseInt(p.finish);
+            if (pos >= 1 && pos <= 3 && !seen.has(pos)) {
+              seen.add(pos);
+              top3.push(p);
+            }
+          });
+        if (top3.length > 0) {
+          podiumHtml = '<div style="margin-top:4px;font-size:11px;opacity:0.9">' +
+            top3.map((p,i) => medals[i] + ' ' + p.horse + (p.sp ? ' (' + p.sp + ')' : '')).join('  ') +
+          '</div>';
+        }
+      }
+
+      const cardHeaderContent =
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-weight:600">' + raceData.course + '</span>' +
+            '<span class="time">' + cleanRaceTime(raceData.time) + '</span>' +
+          '</div>' +
+          (raceData.name ? '<div style="font-size:11px;opacity:0.8;font-weight:400;margin-top:1px">' + raceData.name + '</div>' : '') +
+          podiumHtml +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:10px">' +
+          (hasResults
+            ? '<span style="font-size:12px;opacity:0.85">' + weekPts + ' pts total</span>'
+            : '<button class="btn btn-amber" style="font-size:12px;padding:5px 11px" data-fetchid="' + raceId + '"' +
+              ' onclick="event.stopPropagation();fetchRaceResults(this.dataset.fetchid,' + weekNumber + ',this)">Fetch results</button>') +
+          '<span class="toggle-arrow" style="font-size:16px;transition:transform 0.2s">›</span>' +
+        '</div>';
+
+      html += '<div class="card" style="margin-bottom:10px">';
+      html += '<div class="card-header" style="cursor:pointer;user-select:none" data-raceid="' + raceId + '"' +
+        ' onclick="handleRaceCardClick(this)">' + cardHeaderContent + '</div>';
+      html += '<div id="rd_' + raceId + '" style="display:none">';
 
       if (hasResults) {
         // Sort picks by finish position
@@ -1574,6 +1685,7 @@ async function showWeekDetail(player, week, tile) {
           <div style="font-size:12px;color:var(--text-muted)">
             ${medal} ${finish !== '—' ? finish + ordinal : finish}
           </div>
+          ${p.sp ? `<div style="font-size:11px;color:var(--text-muted)">${p.sp}</div>` : ''}
           <span class="points-badge pts-${Math.min(pts,3)}" style="font-size:11px;padding:2px 7px">
             ${pts}pt${pts!==1?'s':''}
           </span>
@@ -1585,6 +1697,219 @@ async function showWeekDetail(player, week, tile) {
   } catch(e) {
     detailEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px">Could not load picks.</div>';
   }
+}
+
+
+// =============================================
+// RUNNER SCORING ALGORITHM
+// =============================================
+
+// Draw bias by course — positive = low draws favoured, negative = high draws favoured
+// 0 = draw doesn't matter much (e.g. right-handed galloping tracks)
+const DRAW_BIAS = {
+  'Chester':        -2.5,  // Very tight track, low draws strongly favoured
+  'Ascot':           0.0,  // Straight 5f high draws, round course neutral
+  'York':           -1.0,  // Soft ground favours low, fast ground high
+  'Sandown':        -0.5,
+  'Haydock':        -0.5,
+  'Newbury':         0.0,
+  'Goodwood':       -1.0,  // Quirky track, low draws on straight
+  'Epsom':          -1.5,  // Famous for wide draw disadvantage on Derby course
+  'Newmarket':       0.5,  // Rowley Mile favours high draws
+  'Lingfield':      -1.0,
+  'Wolverhampton':  -1.0,
+  'Kempton':         0.0,
+  'Windsor':        -0.5,
+  'Nottingham':      0.0,
+  'Leicester':       0.0,
+  'Salisbury':      -0.5,
+  'Bath':           -0.5,
+  'Carlisle':       -0.5,
+  'Beverley':       -1.5,  // Very favourable low draws
+  'Catterick':      -1.0,
+  'Ripon':          -0.5,
+  'Thirsk':         -0.5,
+  'Redcar':          0.0,
+  'Musselburgh':    -0.5,
+  'Ayr':             0.0,
+  'Hamilton':       -1.0,
+  'Chepstow':       -0.5,
+  'Cardiff':        -0.5,
+};
+
+// Top trainers — bonus points for elite stables
+const TOP_TRAINERS = {
+  // UK flat elite
+  "John Gosden": 2, "Charlie Appleby": 2, "Aidan O'Brien": 2,
+  "Roger Varian": 1.5, "William Haggas": 1.5, "Andrew Balding": 1,
+  "Ralph Beckett": 1, "Richard Hannon": 1, "Mark Johnston": 1,
+  "Kevin Ryan": 1, "Clive Cox": 1, "Tim Easterby": 0.5,
+  "David Menuisier": 1, "John & Thady Gosden": 2,
+  // UK jumps
+  "Willie Mullins": 2, "Nicky Henderson": 2, "Paul Nicholls": 1.5,
+  "Dan Skelton": 1, "Kim Bailey": 0.5,
+  // Irish
+  "Joseph O'Brien": 1.5, "Dermot Weld": 1, "Gavin Cromwell": 0.5,
+};
+
+// Top jockeys — bonus points
+const TOP_JOCKEYS = {
+  "Frankie Dettori": 2, "Ryan Moore": 2, "William Buick": 2,
+  "James McDonald": 1.5, "Oisin Murphy": 1.5, "Tom Marquand": 1,
+  "Jim Crowley": 1, "David Egan": 1, "Adam Kirby": 0.5,
+  "Hollie Doyle": 1, "Harry Cobden": 1.5, "Paul Townend": 2,
+  "Rachael Blackmore": 1.5, "Patrick Mullins": 1,
+  "Hector Crouch": 0.5, "Kieran Shoemark": 0.5,
+};
+
+function scoreRunner(r, fieldSize, course, fieldRunners) {
+  const breakdown = [];
+  let total = 0;
+
+  // ── 1. FORM (max 15 pts) ─────────────────────────────────────────────
+  // Parse form string — most recent run is LAST character in Racing API format
+  const formStr = (r.form || '').replace(/[^0-9PFURpu]/gi, '');
+  let formScore = 0;
+  let formDetail = [];
+  if (formStr.length > 0) {
+    // Last 4 runs, most recent first (form string reads left=oldest, right=most recent)
+    const recent = formStr.split('').reverse().slice(0, 4);
+    const weights = [5, 3, 2, 1]; // most recent weighted most heavily
+    recent.forEach((f, i) => {
+      const pos = parseInt(f);
+      if (!isNaN(pos)) {
+        const pts = pos === 1 ? 3 : pos === 2 ? 2 : pos === 3 ? 1 : 0;
+        formScore += pts * weights[i];
+        if (pts > 0) formDetail.push(f);
+      }
+    });
+    formScore = Math.min(formScore, 15);
+  }
+  total += formScore;
+  breakdown.push({
+    label: 'Recent form',
+    score: formScore,
+    max: 15,
+    detail: formStr ? formStr.split('').reverse().slice(0,4).join('') + (formStr.length > 4 ? '…' : '') : 'No form'
+  });
+
+  // ── 2. DAYS SINCE LAST RUN (max 8 pts) ─────────────────────────────
+  const days = parseInt(r.last_run);
+  let freshnessScore = 0;
+  let freshnessDetail = '';
+  if (!isNaN(days)) {
+    if      (days >= 14 && days <= 28) { freshnessScore = 8; freshnessDetail = days + 'd — ideal'; }
+    else if (days >= 7  && days < 14)  { freshnessScore = 6; freshnessDetail = days + 'd — fresh'; }
+    else if (days >= 29 && days <= 42) { freshnessScore = 6; freshnessDetail = days + 'd — good'; }
+    else if (days >= 43 && days <= 60) { freshnessScore = 4; freshnessDetail = days + 'd — fair'; }
+    else if (days < 7)                 { freshnessScore = 3; freshnessDetail = days + 'd — very quick back'; }
+    else                               { freshnessScore = 1; freshnessDetail = days + 'd — big break'; }
+  } else {
+    freshnessDetail = 'Unknown';
+  }
+  total += freshnessScore;
+  breakdown.push({ label: 'Freshness', score: freshnessScore, max: 8, detail: freshnessDetail });
+
+  // ── 3. OFFICIAL RATING relative to field (max 10 pts) ──────────────
+  const orVal = parseInt(r.ofr) || 0;
+  let orScore = 0;
+  let orDetail = '';
+  if (orVal > 0) {
+    const fieldORs = fieldRunners.map(h => parseInt(h.ofr) || 0).filter(v => v > 0);
+    if (fieldORs.length > 1) {
+      const maxOR = Math.max(...fieldORs);
+      const minOR = Math.min(...fieldORs);
+      const range = maxOR - minOR || 1;
+      orScore = Math.round(((orVal - minOR) / range) * 10);
+      orDetail = 'OR ' + orVal + ' (' + (orVal === maxOR ? 'top rated' : (orVal - minOR) + ' off top') + ')';
+    } else {
+      orScore = 5;
+      orDetail = 'OR ' + orVal;
+    }
+  } else {
+    orDetail = 'No OR (Group/Listed)';
+  }
+  total += orScore;
+  breakdown.push({ label: 'Official Rating', score: orScore, max: 10, detail: orDetail });
+
+  // ── 4. DRAW (max 6 pts) ─────────────────────────────────────────────
+  const drawNum = parseInt(r.draw);
+  const bias = DRAW_BIAS[course] || 0;
+  let drawScore = 3; // neutral
+  let drawDetail = '';
+  if (!isNaN(drawNum) && fieldSize > 0 && Math.abs(bias) > 0) {
+    // Normalise draw position (0 = stall 1, 1 = highest stall)
+    const normDraw = (drawNum - 1) / Math.max(fieldSize - 1, 1);
+    // bias < 0 means low draws good: score high when normDraw is low
+    const rawScore = bias < 0 ? (1 - normDraw) : normDraw;
+    drawScore = Math.round(rawScore * 6);
+    const bias_label = Math.abs(bias) >= 2 ? 'strong' : Math.abs(bias) >= 1 ? 'moderate' : 'slight';
+    const favour = bias < 0 ? 'low' : 'high';
+    drawDetail = 'Draw ' + drawNum + ' — ' + bias_label + ' ' + favour + ' draw bias at ' + course;
+  } else if (isNaN(drawNum)) {
+    drawScore = 3;
+    drawDetail = 'No draw (jumps/no stalls)';
+  } else {
+    drawScore = 3;
+    drawDetail = 'Draw ' + drawNum + ' — neutral course';
+  }
+  total += drawScore;
+  breakdown.push({ label: 'Draw', score: drawScore, max: 6, detail: drawDetail });
+
+  // ── 5. WEIGHT relative to field (max 5 pts) ─────────────────────────
+  const lbs = parseInt(r.lbs);
+  let weightScore = 0;
+  let weightDetail = '';
+  if (!isNaN(lbs) && lbs > 0) {
+    const fieldWeights = fieldRunners.map(h => parseInt(h.lbs) || 0).filter(v => v > 0);
+    if (fieldWeights.length > 1) {
+      const maxLbs = Math.max(...fieldWeights);
+      const minLbs = Math.min(...fieldWeights);
+      const range = maxLbs - minLbs || 1;
+      // Lower weight = better in handicaps
+      weightScore = Math.round(((maxLbs - lbs) / range) * 5);
+      weightDetail = lbs + 'lbs (' + (lbs === minLbs ? 'lightest' : lbs === maxLbs ? 'top weight' : (lbs - minLbs) + 'lbs above minimum') + ')';
+    } else {
+      weightScore = 3;
+      weightDetail = lbs + 'lbs';
+    }
+  } else {
+    weightDetail = 'Unknown';
+  }
+  total += weightScore;
+  breakdown.push({ label: 'Weight', score: weightScore, max: 5, detail: weightDetail });
+
+  // ── 6. TRAINER (max 4 pts) ──────────────────────────────────────────
+  const trainerName = r.trainer || '';
+  const trainerScore = TOP_TRAINERS[trainerName] || 0;
+  total += trainerScore;
+  breakdown.push({
+    label: 'Trainer',
+    score: trainerScore,
+    max: 4,
+    detail: trainerName || 'Unknown' + (trainerScore > 0 ? ' ★' : '')
+  });
+
+  // ── 7. JOCKEY (max 4 pts) ───────────────────────────────────────────
+  const jockeyName = (r.jockey || '').replace(/\([0-9]+\)$/, '').trim();
+  const jockeyScore = TOP_JOCKEYS[jockeyName] || 0;
+  total += jockeyScore;
+  breakdown.push({
+    label: 'Jockey',
+    score: jockeyScore,
+    max: 4,
+    detail: jockeyName || 'Unknown' + (jockeyScore > 0 ? ' ★' : '')
+  });
+
+  return { total: Math.round(total * 10) / 10, max: 52, breakdown };
+}
+
+function renderScoreBar(score, max, color) {
+  const pct = Math.round((score / max) * 100);
+  color = color || 'var(--green)';
+  return `<div style="height:4px;background:var(--gray-light);border-radius:2px;flex:1">
+    <div style="width:\${pct}%;height:100%;background:\${color};border-radius:2px;transition:width 0.3s"></div>
+  </div>`;
 }
 
 </script>
