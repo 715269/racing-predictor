@@ -654,8 +654,15 @@ async function loadRaces() {
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
-      // No races set yet — show admin PIN gate
-      showCourseFilter();
+      // No races set yet for this week
+      // Only show course filter on a Saturday (day 6) or if there are UK races
+      const today = new Date();
+      const isSaturday = today.getDay() === 6;
+      if (isSaturday) {
+        showCourseFilter();
+      } else {
+        showNotice('picks', '🏇 No ITV races selected yet for this week. Come back on Saturday when Ged sets the races!', 'warning');
+      }
     }
   } catch(e) {
     document.getElementById('picks-loading').innerHTML =
