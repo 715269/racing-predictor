@@ -1352,9 +1352,11 @@ async function fetchRaceResults(raceId, week, btn) {
 async function loadLeaderboard() {
   document.getElementById('leaderboard-loading').style.display = 'block';
   try {
-    const res = await fetch(`${SCRIPT_URL}?action=getSeason`);
+    const res = await fetch(`${SCRIPT_URL}?action=getseason`);
     const data = await res.json();
     const standings = data.standings || [];
+    console.log('Season data:', JSON.stringify(data).substring(0, 500));
+    console.log('First player weekly:', standings[0] ? JSON.stringify(standings[0].weekly) : 'none');
 
     const weeks = data.weeks || [];
     const maxPts = Math.max(...standings.map(s => s.total), 1);
