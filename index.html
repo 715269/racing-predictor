@@ -1347,6 +1347,48 @@ async function fetchRaceResults(raceId, week, btn) {
     if (data.top3 && data.top3.length > 0) {
       raceResults[raceId] = data.top3;
     }
+
+    // Save score log for all runners in this race
+    try {
+      const race = races.find(r => r.race_id === raceId);
+      const raceRunners = runners[raceId] || [];
+      if (race && raceRunners.length > 0) {
+        const fieldSize = raceRunners.filter(r => !r.is_nr).length;
+        const active = raceRunners.filter(r => !r.is_nr);
+        const winner = data.top3 && data.top3[0] ? data.top3[0].horse : '';
+
+        // Calculate scores for all runners
+        const runnerScores = active.map(r => {
+          const s = scoreRunner(r, fieldSize, race.course, active);
+          // Extract individual factor scores from breakdown
+          const get = (label) => {
+            const b = s.breakdown.find(x => x.label === label);
+            return b ? b.score : 0;
+          };
+          return {
+            name: r.name, jockey: r.jockey, trainer: r.trainer,
+            score: s.total, max: s.max,
+            form: get('Recent form'), freshness: get('Freshness'),
+            or: get('Official Rating'), draw: get('Draw'),
+            weight: get('Weight'), trainerPts: get('Trainer'),
+            jockeyPts: get('Jockey'), cd: get('C&D Winner'),
+            finish: ''  // filled in by Apps Script from Picks sheet
+          };
+        });
+
+        const logParams = new URLSearchParams({
+          action: 'savescorelog',
+          week: weekNumber,
+          course: race.course,
+          race_time: race.time,
+          race_name: race.name || '',
+          winner: winner,
+          runners: JSON.stringify(runnerScores)
+        });
+        fetch(SCRIPT_URL + '?' + logParams.toString()).catch(e => console.log('Score log failed:', e));
+      }
+    } catch(e) { console.log('Score log error:', e); }
+
     loadResults();
     loadLeaderboard();
   } catch(e) {
