@@ -942,17 +942,25 @@ function renderRunnerPicker(race, submitted, sortMode) {
           <div id="bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}"
             style="display:none;margin-top:8px;padding:8px;background:var(--gray-light);
             border-radius:8px;font-size:12px">
-            ${runnerScore.breakdown.map(b => `
-              <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-                <span style="min-width:90px;color:var(--text-muted)">${b.label}</span>
-                <div style="flex:1;height:3px;background:#ddd;border-radius:2px;overflow:hidden">
-                  <div style="width:${Math.round((b.score/b.max)*100)}%;height:100%;
-                    background:${b.score>=b.max*0.7?'var(--green)':b.score>=b.max*0.4?'var(--amber)':'var(--red)'};
-                    border-radius:2px"></div>
-                </div>
-                <span style="min-width:28px;text-align:right;font-weight:600">${b.score}/${b.max}</span>
-                <span style="color:var(--text-muted);min-width:0;font-size:11px">${b.detail}</span>
-              </div>`).join('')}
+            ${runnerScore.breakdown.map(b => {
+              if (b.score === null) {
+                // Informational row (e.g. Best odds) — no bar
+                return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
+                  '<span style="min-width:90px;color:var(--text-muted)">' + b.label + '</span>' +
+                  '<span style="flex:1;font-size:12px;font-weight:600;color:var(--amber)">' + b.detail + '</span>' +
+                '</div>';
+              }
+              const pct = Math.round((b.score/b.max)*100);
+              const barColor = b.score>=b.max*0.7?'var(--green)':b.score>=b.max*0.4?'var(--amber)':'var(--red)';
+              return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
+                '<span style="min-width:90px;color:var(--text-muted)">' + b.label + '</span>' +
+                '<div style="flex:1;height:3px;background:#ddd;border-radius:2px;overflow:hidden">' +
+                  '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px"></div>' +
+                '</div>' +
+                '<span style="min-width:28px;text-align:right;font-weight:600">' + b.score + '/' + b.max + '</span>' +
+                '<span style="color:var(--text-muted);min-width:0;font-size:11px">' + b.detail + '</span>' +
+              '</div>';
+            }).join('')}
             <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
               display:flex;justify-content:space-between;font-weight:600;font-size:12px">
               <span>Total score</span>
@@ -2031,7 +2039,9 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
 
   // ── 8. BEST ODDS indicator (informational only, no score) ─────────
   const oddsKey = (r.name || '').toLowerCase();
-  const bestOdds = FORM_DATA.horseOdds[oddsKey] || null;
+  const rawOdds = FORM_DATA.horseOdds[oddsKey] || null;
+  // Only use if it looks like odds (contains / and no spaces around it, or is EVS)
+  const bestOdds = rawOdds && /^\d+\/\d+$|^EVS$|^\d+\/\d+F$/.test(rawOdds.trim()) ? rawOdds.trim() : null;
   if (bestOdds) {
     breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
   }
