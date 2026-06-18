@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9tyioXeNUUJu0_iI4N9Z-6bnE6__qqxF1Kzq-5wCJEeRElj58LZZ1BHjqAPV6W0XM/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwE98Ij2b7pGtfJnvt6JzpJ39ta5dXiNlZdgrwSIu0KBIui1vhrbIOFYKAldI5MMtfFMA/exec';
 
 // =============================================
 // STATE
@@ -956,7 +956,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
             <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
               display:flex;justify-content:space-between;font-weight:600;font-size:12px">
               <span>Total score</span>
-              <span style="color:var(--green)">${runnerScore.total.toFixed(1)} / 52</span>
+              <span style="color:var(--green)">${runnerScore.total.toFixed(1)} / ${runnerScore.max}</span>
             </div>
           </div>
         </div>
