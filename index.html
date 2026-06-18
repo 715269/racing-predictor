@@ -1368,53 +1368,55 @@ async function loadLeaderboard() {
       standings.forEach((s, i) => {
         const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
         const barPct = Math.round((s.total / maxPts) * 100);
-        html += `
-          <div style="border-bottom:1px solid var(--border)">
-            <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;
-              cursor:pointer;user-select:none" onclick="toggleSeasonDetail('sd_${s.player}', this)">
-              <div class="lb-rank ${rankClass}" style="flex-shrink:0">${i+1}</div>
-              <div style="flex:1">
-                <div style="font-weight:600;font-size:15px">${s.player}</div>
-                <div style="margin-top:4px;height:4px;background:var(--gray-light);border-radius:2px;overflow:hidden">
-                  <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px;transition:width 0.4s"></div>
-                </div>
-              </div>
-              <div style="text-align:right;flex-shrink:0">
-                <div style="font-size:22px;font-weight:700;color:var(--green)">${s.total}</div>
-                <div style="font-size:11px;color:var(--text-muted)">pts</div>
-                ${s.wins > 0 ? '<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">🏆 ' +
-                  (s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)) + ' ' + (s.wins === 1 ? 'win' : 'wins') +
-                  '</div>' : ''}
-              </div>
-              <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
-            </div>
-            <div id="sd_${s.player}" style="display:none;background:var(--gray-light);padding:12px 14px">
-              <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">
-                Week by week
-              </div>
-              <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">
-                ${(s.weekly||[]).map(w => {
-                  const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
-                  return '<div onclick="showWeekDetail(\'' + s.player + '\', ' + w.week + ', this)"' +
-                    ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
-                    'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
-                    ' data-player="' + s.player + '" data-week="' + w.week + '">' +
-                    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
-                    '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
-                    '<div style="font-size:10px;color:var(--text-muted)">pts</div>' +
-                  '</div>';
-                }).join('')}
-                }).join('')}
-              </div>
-              <div id="week-detail-${s.player}" style="display:none;margin-top:10px;
-                background:#fff;border-radius:8px;border:1.5px solid var(--border)"></div>
-              <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);
-                display:flex;justify-content:space-between;font-size:13px">
-                <span style="color:var(--text-muted)">Best week: <strong>${Math.max(...(s.weekly||[{pts:0}]).map(w=>w.pts))} pts</strong></span>
-                <span style="color:var(--text-muted)">${(s.weekly||[]).filter(w=>w.pts>0).length} scoring weeks</span>
-              </div>
-            </div>
-          </div>`;
+        const bestWk = Math.max(...(s.weekly||[{pts:0}]).map(w => w.pts));
+        const scoringWks = (s.weekly||[]).filter(w => w.pts > 0).length;
+        const winsStr = s.wins > 0
+          ? '<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">\uD83C\uDFC6 ' +
+            (s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)) + ' ' + (s.wins === 1 ? 'win' : 'wins') + '</div>'
+          : '';
+
+        const weekTiles = (s.weekly||[]).map(w => {
+          const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
+          return '<div onclick="showWeekDetail(\'' + s.player + '\', ' + w.week + ', this)"' +
+            ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
+            'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
+            ' data-player="' + s.player + '" data-week="' + w.week + '">' +
+            '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
+            '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
+            '<div style="font-size:10px;color:var(--text-muted)">pts</div>' +
+            '</div>';
+        }).join('');
+
+        html +=
+          '<div style="border-bottom:1px solid var(--border)">' +
+            '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none"' +
+              ' onclick="toggleSeasonDetail(\'sd_' + s.player + '\', this)">' +
+              '<div class="lb-rank ' + rankClass + '" style="flex-shrink:0">' + (i+1) + '</div>' +
+              '<div style="flex:1">' +
+                '<div style="font-weight:600;font-size:15px">' + s.player + '</div>' +
+                '<div style="margin-top:4px;height:4px;background:var(--gray-light);border-radius:2px;overflow:hidden">' +
+                  '<div style="width:' + barPct + '%;height:100%;background:var(--green);border-radius:2px;transition:width 0.4s"></div>' +
+                '</div>' +
+              '</div>' +
+              '<div style="text-align:right;flex-shrink:0">' +
+                '<div style="font-size:22px;font-weight:700;color:var(--green)">' + s.total + '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">pts</div>' +
+                winsStr +
+              '</div>' +
+              '<span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">\u203a</span>' +
+            '</div>' +
+            '<div id="sd_' + s.player + '" style="display:none;background:var(--gray-light);padding:12px 14px">' +
+              '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Week by week</div>' +
+              '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">' +
+                weekTiles +
+              '</div>' +
+              '<div id="week-detail-' + s.player + '" style="display:none;margin-top:10px;background:#fff;border-radius:8px;border:1.5px solid var(--border)"></div>' +
+              '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">' +
+                '<span style="color:var(--text-muted)">Best week: <strong>' + bestWk + ' pts</strong></span>' +
+                '<span style="color:var(--text-muted)">' + scoringWks + ' scoring weeks</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
       });
     }
     html += '</div></div>';
