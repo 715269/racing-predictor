@@ -1563,6 +1563,7 @@ function toggleRaceDetail(id, header) {
 
 async function toggleSeasonDetail(id, row) {
   const el = document.getElementById(id);
+  if (!el) { console.error('Season detail element not found:', id); return; }
   const arrow = row.querySelector('.toggle-arrow');
   const open = el.style.display === 'block';
   if (open) {
@@ -1607,7 +1608,8 @@ async function toggleSeasonDetail(id, row) {
       '<span style="color:var(--text-muted)">Best week: <strong>' + bestWk + ' pts</strong></span>' +
       '<span style="color:var(--text-muted)">' + scoringWks + ' scoring weeks</span>';
   } catch(e) {
-    if (gridEl) gridEl.innerHTML = '<span style="color:var(--red);font-size:12px">Could not load weekly data.</span>';
+    console.error('toggleSeasonDetail error:', e.message, e.stack);
+    if (gridEl) gridEl.innerHTML = '<span style="color:var(--red);font-size:12px">Could not load: ' + e.message + '</span>';
   }
 }
 
