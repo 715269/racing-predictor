@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyqDCrg-3KR4strj7OBq4wnUZUDfecKZ7TiRZbX8suxN6HDpbYncREdonH7GuBJIJeTbQ/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxwUOjKmKfbU2b7VUv9DC3YsesBq-TeNFD4EYXNgM9F-UmUCzv69_yAdnGIUJ32Xm0vUA/exec';
 
 // =============================================
 // STATE
@@ -1357,35 +1357,37 @@ async function fetchRaceResults(raceId, week, btn) {
         const active = raceRunners.filter(r => !r.is_nr);
         const winner = data.top3 && data.top3[0] ? data.top3[0].horse : '';
 
-        // Calculate scores for all runners
-        const runnerScores = active.map(r => {
+        // Send one row per runner to avoid URL length limits
+        active.forEach(function(r) {
           const s = scoreRunner(r, fieldSize, race.course, active);
-          // Extract individual factor scores from breakdown
           const get = (label) => {
             const b = s.breakdown.find(x => x.label === label);
-            return b ? b.score : 0;
+            return b && b.score !== null ? b.score : 0;
           };
-          return {
-            name: r.name, jockey: r.jockey, trainer: r.trainer,
-            score: s.total, max: s.max,
-            form: get('Recent form'), freshness: get('Freshness'),
-            or: get('Official Rating'), draw: get('Draw'),
-            weight: get('Weight'), trainerPts: get('Trainer'),
-            jockeyPts: get('Jockey'), cd: get('C&D Winner'),
-            finish: ''  // filled in by Apps Script from Picks sheet
-          };
+          const logParams = new URLSearchParams({
+            action: 'savescorelog',
+            week: weekNumber,
+            course: race.course,
+            race_time: race.time,
+            race_name: race.name || '',
+            winner: winner,
+            horse: r.name,
+            jockey: r.jockey || '',
+            trainer: r.trainer || '',
+            score: s.total,
+            max: s.max,
+            f_form: get('Recent form'),
+            f_fresh: get('Freshness'),
+            f_or: get('Official Rating'),
+            f_draw: get('Draw'),
+            f_weight: get('Weight'),
+            f_trainer: get('Trainer'),
+            f_jockey: get('Jockey'),
+            f_cd: get('C&D Winner')
+          });
+          fetch(SCRIPT_URL + '?' + logParams.toString())
+            .catch(e => console.log('Score log failed:', e));
         });
-
-        const logParams = new URLSearchParams({
-          action: 'savescorelog',
-          week: weekNumber,
-          course: race.course,
-          race_time: race.time,
-          race_name: race.name || '',
-          winner: winner,
-          runners: JSON.stringify(runnerScores)
-        });
-        fetch(SCRIPT_URL + '?' + logParams.toString()).catch(e => console.log('Score log failed:', e));
       }
     } catch(e) { console.log('Score log error:', e); }
 
