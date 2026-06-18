@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyyzGDWfwHOmXqiCp2aquqQDu3e7Q6ZR1jQTmErdSSxtOcOHtxCB1wZUnuocRlsO8CUsA/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9tyioXeNUUJu0_iI4N9Z-6bnE6__qqxF1Kzq-5wCJEeRElj58LZZ1BHjqAPV6W0XM/exec';
 
 // =============================================
 // STATE
@@ -1825,12 +1825,13 @@ async function showWeekDetail(player, week, tile) {
 let FORM_DATA = {
   trainerForm: {},      // trainer name -> { wins, runs, pct }
   jockeyForm: {},       // jockey name -> { wins, runs, pct }
-  hotTrainers: {},      // trainer name -> { wins, runs, pct } (short term)
-  hotJockeys: {},       // jockey name -> { wins, runs, pct }
-  courseTrainers: {},   // "trainer|course" -> { wins, runs, pct }
-  courseJockeys: {},    // "jockey|course" -> { wins, runs, pct }
+  hotTrainers: {},      // trainer name -> { pct } (last 14 days)
+  hotJockeys: {},       // jockey name -> { pct } (last 14 days)
+  courseTrainers: {},   // "trainer|course" -> { pct }
+  courseJockeys: {},    // "jockey|course" -> { pct }
   trainerJockeyCombos: {}, // "trainer|jockey|course" -> comboPct
   horseOdds: {},        // horse name -> best odds string
+  cdWinners: {},        // horse name (lowercase) -> course (C&D winner flag)
   loaded: false
 };
 
@@ -1905,18 +1906,19 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   });
 
   // ── 2. DAYS SINCE LAST RUN (max 8 pts) ───────────────────────────
+  // ── 2. DAYS SINCE LAST RUN (max 4 pts) ──────────────────────────
+  // Flattened curve — most gaps are fine, only penalise extreme cases
+  // A 49-day break is as valid as a 18-day break for a quality horse
   const days = parseInt(r.last_run);
   let freshnessScore = 0, freshnessDetail = '';
   if (!isNaN(days)) {
-    if      (days >= 14 && days <= 28) { freshnessScore = 8; freshnessDetail = days + 'd — ideal'; }
-    else if (days >= 7  && days < 14)  { freshnessScore = 6; freshnessDetail = days + 'd — fresh'; }
-    else if (days >= 29 && days <= 42) { freshnessScore = 6; freshnessDetail = days + 'd — good'; }
-    else if (days >= 43 && days <= 60) { freshnessScore = 4; freshnessDetail = days + 'd — fair'; }
-    else if (days < 7)                 { freshnessScore = 3; freshnessDetail = days + 'd — very quick back'; }
-    else                               { freshnessScore = 1; freshnessDetail = days + 'd — big break'; }
-  } else { freshnessDetail = 'Unknown'; }
+    if      (days >= 7  && days <= 90) { freshnessScore = 4; freshnessDetail = days + 'd — fit to run'; }
+    else if (days < 7)                 { freshnessScore = 2; freshnessDetail = days + 'd — very quick return'; }
+    else if (days > 90 && days <= 180) { freshnessScore = 2; freshnessDetail = days + 'd — long break'; }
+    else                               { freshnessScore = 0; freshnessDetail = days + 'd — very long break'; }
+  } else { freshnessScore = 4; freshnessDetail = 'Unknown'; }
   total += freshnessScore;
-  breakdown.push({ label: 'Freshness', score: freshnessScore, max: 8, detail: freshnessDetail });
+  breakdown.push({ label: 'Freshness', score: freshnessScore, max: 4, detail: freshnessDetail });
 
   // ── 3. OFFICIAL RATING relative to field (max 10 pts) ────────────
   const orVal = parseInt(r.ofr) || 0;
@@ -1933,22 +1935,24 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   total += orScore;
   breakdown.push({ label: 'Official Rating', score: orScore, max: 10, detail: orDetail });
 
-  // ── 4. DRAW (max 6 pts) ───────────────────────────────────────────
+  // ── 4. DRAW (max 3 pts) — only meaningful at known bias tracks with 10+ runners ──
   const drawNum = parseInt(r.draw);
   const bias = DRAW_BIAS[course] || 0;
-  let drawScore = 3, drawDetail = '';
-  if (!isNaN(drawNum) && fieldSize > 0 && Math.abs(bias) > 0) {
+  let drawScore = 0, drawDetail = '';
+  // Only apply draw bias if: strong bias course AND large field (10+)
+  const drawMatters = Math.abs(bias) >= 1.0 && fieldSize >= 10;
+  if (!isNaN(drawNum) && drawMatters) {
     const normDraw = (drawNum - 1) / Math.max(fieldSize - 1, 1);
-    drawScore = Math.round((bias < 0 ? (1 - normDraw) : normDraw) * 6);
-    const biasLabel = Math.abs(bias) >= 2 ? 'strong' : Math.abs(bias) >= 1 ? 'moderate' : 'slight';
-    drawDetail = 'Draw ' + drawNum + ' — ' + biasLabel + ' ' + (bias < 0 ? 'low' : 'high') + ' bias at ' + course;
+    drawScore = Math.round((bias < 0 ? (1 - normDraw) : normDraw) * 3);
+    const biasLabel = Math.abs(bias) >= 2 ? 'strong' : 'moderate';
+    drawDetail = 'Draw ' + drawNum + ' — ' + biasLabel + ' ' + (bias < 0 ? 'low' : 'high') + ' bias at ' + course + ' (' + fieldSize + ' runners)';
   } else if (isNaN(drawNum)) {
-    drawScore = 3; drawDetail = 'No draw (jumps/no stalls)';
+    drawScore = 0; drawDetail = 'No draw (jumps/no stalls)';
   } else {
-    drawScore = 3; drawDetail = 'Draw ' + drawNum + ' — neutral course';
+    drawScore = 0; drawDetail = 'Draw ' + drawNum + ' — not significant here';
   }
   total += drawScore;
-  breakdown.push({ label: 'Draw', score: drawScore, max: 6, detail: drawDetail });
+  breakdown.push({ label: 'Draw', score: drawScore, max: 3, detail: drawDetail });
 
   // ── 5. WEIGHT relative to field (max 5 pts) ──────────────────────
   const lbs = parseInt(r.lbs);
@@ -1965,88 +1969,123 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   total += weightScore;
   breakdown.push({ label: 'Weight', score: weightScore, max: 5, detail: weightDetail });
 
-  // ── 6. TRAINER (max 6 pts) — uses live 30-day % if available ─────
+  // ── 6. TRAINER (max 5 pts) ───────────────────────────────────────
   const trainerName = (r.trainer || '').trim();
   let trainerScore = 0, trainerDetail = trainerName || 'Unknown';
+
+  const TRAINER_FALLBACK = {
+    "John Gosden": 3, "John & Thady Gosden": 3, "Charlie Appleby": 3,
+    "Aidan O'Brien": 3, "A P O'Brien": 3, "AP O'Brien": 3,
+    "Roger Varian": 3, "William Haggas": 3, "Sir Michael Stoute": 3,
+    "Andrew Balding": 2, "Ralph Beckett": 2, "Richard Hannon": 2,
+    "Mark Johnston": 2, "Charlie Johnston": 2, "Saeed bin Suroor": 2,
+    "Simon & Ed Crisford": 2, "Ed Crisford": 2, "Hugo Palmer": 2,
+    "Kevin Ryan": 1.5, "Clive Cox": 1.5, "Karl Burke": 1.5,
+    "Richard Fahey": 1.5, "Tim Easterby": 1.5, "David O'Meara": 1.5,
+    "George Boughey": 1.5, "Ed Walker": 1.5, "Archie Watson": 1.5,
+    "Joseph O'Brien": 2, "Joseph Patrick O'Brien": 2, "Dermot Weld": 2,
+    "Jessica Harrington": 2, "G M Lyons": 2, "Ger Lyons": 2,
+    "Willie Mullins": 3, "Nicky Henderson": 3, "Paul Nicholls": 2,
+    "Gordon Elliott": 2, "Henry de Bromhead": 2, "Henry De Bromhead": 2,
+    "Dan Skelton": 1.5, "Kim Bailey": 1,
+  };
+
   if (FORM_DATA.loaded && trainerName) {
-    // Check hot trainer (short-term form) first — bonus 0.5pts
     const hot = FORM_DATA.hotTrainers[trainerName];
-    const form30 = FORM_DATA.trainerForm[trainerName];
     const courseKey = trainerName + '|' + course;
     const courseForm = FORM_DATA.courseTrainers[courseKey];
 
-    if (form30) {
-      // Scale 30-day % to 0-4pts (25%+ = 4pts, 20% = 3pts, 15% = 2pts, 10% = 1pt)
-      trainerScore = Math.min(4, Math.round(form30.pct / 6.25));
-      trainerDetail = trainerName + ' ' + form30.pct + '% (30d, ' + form30.wins + 'W/' + form30.runs + 'R)';
-    }
+    // Base score from fallback list
+    trainerScore = TRAINER_FALLBACK[trainerName] || 1;
+    trainerDetail = trainerName;
+
+    // Hot trainer bonus (+1.5)
     if (hot) {
-      trainerScore = Math.min(4, trainerScore + 0.5);
-      trainerDetail += ' 🔥';
+      trainerScore = Math.min(5, trainerScore + 1.5);
+      trainerDetail += ' 🔥 (' + hot.pct + '% last 14d)';
     }
+    // Course specialist bonus (+1)
     if (courseForm) {
-      trainerScore = Math.min(4, trainerScore + 0.5);
-      trainerDetail += ' | Course: ' + courseForm.pct + '%';
+      trainerScore = Math.min(5, trainerScore + 1);
+      trainerDetail += ' | ' + course + ' specialist ' + courseForm.pct + '%';
     }
-    if (!form30) trainerDetail = trainerName + ' (no recent data)';
+    if (!hot && !courseForm) trainerDetail += ' (no hot data)';
   } else {
-    // Fallback to hardcoded list if form data not loaded
-    const FALLBACK = {
-      "John Gosden": 2, "John & Thady Gosden": 2, "Charlie Appleby": 2,
-      "Aidan O'Brien": 2, "A P O'Brien": 2, "AP O'Brien": 2,
-      "Roger Varian": 2, "William Haggas": 2, "Andrew Balding": 1.5,
-      "Ralph Beckett": 1.5, "Richard Hannon": 1.5, "Joseph O'Brien": 1.5,
-      "Joseph Patrick O'Brien": 1.5, "Saeed bin Suroor": 1.5,
-    };
-    trainerScore = FALLBACK[trainerName] || 0;
+    trainerScore = TRAINER_FALLBACK[trainerName] || 0;
     trainerDetail = trainerName + (trainerScore > 0 ? ' ★' : '');
   }
   total += trainerScore;
-  breakdown.push({ label: 'Trainer', score: trainerScore, max: 6, detail: trainerDetail });
+  breakdown.push({ label: 'Trainer', score: trainerScore, max: 5, detail: trainerDetail });
 
-  // ── 7. JOCKEY (max 6 pts) — uses live 30-day % if available ──────
+  // ── 7. JOCKEY (max 5 pts) ────────────────────────────────────────
   const jockeyName = (r.jockey || '').replace(/\([0-9]+\)$/, '').trim();
   let jockeyScore = 0, jockeyDetail = jockeyName || 'Unknown';
+
+  const JOCKEY_FALLBACK = {
+    "Frankie Dettori": 3, "Ryan Moore": 3, "William Buick": 3,
+    "Oisin Murphy": 3, "James McDonald": 3,
+    "Tom Marquand": 2, "Jim Crowley": 2, "Adam Kirby": 2,
+    "David Egan": 2, "Hollie Doyle": 2, "Rossa Ryan": 2,
+    "Silvestre De Sousa": 2, "Andrea Atzeni": 2,
+    "Dylan Browne McMonagle": 2, "Colin Keane": 2, "Billy Loughnane": 2,
+    "Hector Crouch": 1.5, "Kieran Shoemark": 1.5, "Daniel Tudhope": 1.5,
+    "Ben Curtis": 1.5, "Jason Hart": 1.5, "David Probert": 1.5,
+    "Cieren Fallon": 1.5, "Paul Hanagan": 1.5, "Joe Fanning": 1.5,
+    "Sean Levey": 1.5, "Richard Kingscote": 1.5, "James Doyle": 2,
+    "Paul Townend": 3, "Rachael Blackmore": 2, "Patrick Mullins": 2,
+    "Harry Cobden": 2, "Nico de Boinville": 2, "Jack Kennedy": 2,
+  };
+
   if (FORM_DATA.loaded && jockeyName) {
     const hot = FORM_DATA.hotJockeys[jockeyName];
-    const form30 = FORM_DATA.jockeyForm[jockeyName];
     const courseKey = jockeyName + '|' + course;
     const courseForm = FORM_DATA.courseJockeys[courseKey];
-    const comboKey = (trainerName + '|' + jockeyName + '|' + course);
+    const comboKey = trainerName + '|' + jockeyName + '|' + course;
     const combo = FORM_DATA.trainerJockeyCombos[comboKey];
 
-    if (form30) {
-      jockeyScore = Math.min(4, Math.round(form30.pct / 6.25));
-      jockeyDetail = jockeyName + ' ' + form30.pct + '% (30d, ' + form30.wins + 'W/' + form30.runs + 'R)';
+    jockeyScore = JOCKEY_FALLBACK[jockeyName] || 1;
+    jockeyDetail = jockeyName;
+
+    if (hot) {
+      jockeyScore = Math.min(5, jockeyScore + 1.5);
+      jockeyDetail += ' 🔥 (' + hot.pct + '% last 14d)';
     }
-    if (hot) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' 🔥'; }
-    if (courseForm) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' | Course: ' + courseForm.pct + '%'; }
-    if (combo) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' | Combo: ' + combo + '%'; }
-    if (!form30) jockeyDetail = jockeyName + ' (no recent data)';
+    if (courseForm) {
+      jockeyScore = Math.min(5, jockeyScore + 0.5);
+      jockeyDetail += ' | ' + course + ' ' + courseForm.pct + '%';
+    }
+    if (combo) {
+      jockeyScore = Math.min(5, jockeyScore + 0.5);
+      jockeyDetail += ' | Combo ' + combo + '%';
+    }
+    if (!hot && !courseForm && !combo) jockeyDetail += ' (no hot data)';
   } else {
-    const FALLBACK = {
-      "Ryan Moore": 2, "William Buick": 2, "Oisin Murphy": 2, "Frankie Dettori": 2,
-      "James McDonald": 2, "Tom Marquand": 1.5, "Jim Crowley": 1.5,
-      "Hollie Doyle": 1.5, "David Egan": 1.5, "Rossa Ryan": 1.5,
-      "Dylan Browne McMonagle": 1.5, "Colin Keane": 1.5,
-      "Paul Townend": 2, "Rachael Blackmore": 1.5, "Harry Cobden": 1.5,
-    };
-    jockeyScore = FALLBACK[jockeyName] || 0;
+    jockeyScore = JOCKEY_FALLBACK[jockeyName] || 0;
     jockeyDetail = jockeyName + (jockeyScore > 0 ? ' ★' : '');
   }
   total += jockeyScore;
-  breakdown.push({ label: 'Jockey', score: jockeyScore, max: 6, detail: jockeyDetail });
+  breakdown.push({ label: 'Jockey', score: jockeyScore, max: 5, detail: jockeyDetail });
 
-  // ── 8. BEST ODDS indicator (informational only, no score) ─────────
-  const oddsKey = (r.name || '').toLowerCase();
+  // ── 8. COURSE & DISTANCE WINNER bonus (max 3 pts) ────────────────
+  const horseKey = (r.name || '').toLowerCase();
+  const isCDWinner = FORM_DATA.cdWinners && FORM_DATA.cdWinners[horseKey];
+  let cdScore = 0, cdDetail = 'No C&D win on record';
+  if (isCDWinner) {
+    cdScore = 3;
+    cdDetail = 'Won over C&D at ' + course + ' ✓';
+  }
+  total += cdScore;
+  breakdown.push({ label: 'C&D Winner', score: cdScore, max: 3, detail: cdDetail });
+
+  // ── 9. BEST ODDS indicator (informational only) ───────────────────
+  const oddsKey = horseKey;
   const rawOdds = FORM_DATA.horseOdds[oddsKey] || null;
-  // Only use if it looks like odds (contains / and no spaces around it, or is EVS)
-  const bestOdds = rawOdds && /^\d+\/\d+$|^EVS$|^\d+\/\d+F$/.test(rawOdds.trim()) ? rawOdds.trim() : null;
+  const bestOdds = rawOdds && /^\d+\/\d+$|^EVS$/.test(rawOdds.trim()) ? rawOdds.trim() : null;
   if (bestOdds) {
     breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
   }
 
-  return { total: Math.round(total * 10) / 10, max: 56, breakdown: breakdown, bestOdds: bestOdds };
+  return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds };
 }
 
 function renderScoreBar(score, max, color) {
