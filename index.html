@@ -1407,13 +1407,13 @@ async function loadLeaderboard() {
             '</div>' +
             '<div id="sd_' + s.player + '" style="display:none;background:var(--gray-light);padding:12px 14px">' +
               '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Week by week</div>' +
-              '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">' +
-                weekTiles +
+              '<div class="weekly-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">' +
+                '<span style="font-size:12px;color:var(--text-muted)">Tap to load...</span>' +
               '</div>' +
               '<div id="week-detail-' + s.player + '" style="display:none;margin-top:10px;background:#fff;border-radius:8px;border:1.5px solid var(--border)"></div>' +
-              '<div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">' +
-                '<span style="color:var(--text-muted)">Best week: <strong>' + bestWk + ' pts</strong></span>' +
-                '<span style="color:var(--text-muted)">' + scoringWks + ' scoring weeks</span>' +
+              '<div class="weekly-stats" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">' +
+                '<span style="color:var(--text-muted)">Best week: <strong>— pts</strong></span>' +
+                '<span style="color:var(--text-muted)">— scoring weeks</span>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -1563,12 +1563,54 @@ function toggleRaceDetail(id, header) {
   if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
 }
 
-function toggleSeasonDetail(id, row) {
+async function toggleSeasonDetail(id, row) {
   const el = document.getElementById(id);
   const arrow = row.querySelector('.toggle-arrow');
   const open = el.style.display === 'block';
-  el.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+  if (open) {
+    el.style.display = 'none';
+    if (arrow) arrow.style.transform = '';
+    return;
+  }
+  el.style.display = 'block';
+  if (arrow) arrow.style.transform = 'rotate(90deg)';
+
+  // Fetch weekly breakdown on demand if not already loaded
+  const grid = el.querySelector('.weekly-grid');
+  if (grid && grid.dataset.loaded) return; // already loaded
+
+  const player = id.replace('sd_', '');
+  const gridEl = el.querySelector('.weekly-grid');
+  if (gridEl) gridEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Loading...</span>';
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getplayerweekly&player=' + encodeURIComponent(player));
+    const data = await res.json();
+    const weekly = data.weekly || [];
+    if (!gridEl) return;
+    gridEl.dataset.loaded = '1';
+    const bestWk = Math.max(...weekly.map(w => w.pts), 0);
+    const scoringWks = weekly.filter(w => w.pts > 0).length;
+
+    gridEl.innerHTML = weekly.map(w => {
+      const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
+      return '<div onclick="showWeekDetail(\'' + player + '\', ' + w.week + ', this)"' +
+        ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
+        'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
+        ' data-player="' + player + '" data-week="' + w.week + '">' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
+        '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted)">pts</div></div>';
+    }).join('');
+
+    // Update best week and scoring weeks
+    const statsEl = el.querySelector('.weekly-stats');
+    if (statsEl) statsEl.innerHTML =
+      '<span style="color:var(--text-muted)">Best week: <strong>' + bestWk + ' pts</strong></span>' +
+      '<span style="color:var(--text-muted)">' + scoringWks + ' scoring weeks</span>';
+  } catch(e) {
+    if (gridEl) gridEl.innerHTML = '<span style="color:var(--red);font-size:12px">Could not load weekly data.</span>';
+  }
 }
 
 // Fix the 1899 date bug — race times stored as "01:35" or ISO datetimes
