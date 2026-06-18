@@ -1382,9 +1382,9 @@ async function loadLeaderboard() {
               <div style="text-align:right;flex-shrink:0">
                 <div style="font-size:22px;font-weight:700;color:var(--green)">${s.total}</div>
                 <div style="font-size:11px;color:var(--text-muted)">pts</div>
-                ${s.wins > 0 ? `<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">
-                  🏆 ${s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)} ${s.wins === 1 ? 'win' : 'wins'}
-                </div>` : ''}
+                ${s.wins > 0 ? '<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">🏆 ' +
+                  (s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)) + ' ' + (s.wins === 1 ? 'win' : 'wins') +
+                  '</div>' : ''}
               </div>
               <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
             </div>
@@ -1395,14 +1395,15 @@ async function loadLeaderboard() {
               <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">
                 ${(s.weekly||[]).map(w => {
                   const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
-                  return `<div onclick="showWeekDetail('${s.player}', ${w.week}, this)"
-                    style="background:#fff;border-radius:8px;padding:8px;text-align:center;
-                    border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"
-                    data-player="${s.player}" data-week="${w.week}">
-                    <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ${w.week}</div>
-                    <div style="font-size:16px;font-weight:700;color:${ptColor}">${w.pts}</div>
-                    <div style="font-size:10px;color:var(--text-muted)">pts</div>
-                  </div>`;
+                  return '<div onclick="showWeekDetail(\'' + s.player + '\', ' + w.week + ', this)"' +
+                    ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
+                    'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
+                    ' data-player="' + s.player + '" data-week="' + w.week + '">' +
+                    '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
+                    '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
+                    '<div style="font-size:10px;color:var(--text-muted)">pts</div>' +
+                  '</div>';
+                }).join('')}
                 }).join('')}
               </div>
               <div id="week-detail-${s.player}" style="display:none;margin-top:10px;
