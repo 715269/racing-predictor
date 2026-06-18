@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxFkWlgoRJqu0rwcAvvOViDL_9g524uEr1Bvq2-i0J0n-n_TLHr0C1hZ5-dcLT9hDU0/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9tyioXeNUUJu0_iI4N9Z-6bnE6__qqxF1Kzq-5wCJEeRElj58LZZ1BHjqAPV6W0XM/exec';
 
 // =============================================
 // STATE
@@ -398,6 +398,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const today = new Date();
   document.getElementById('header-date').textContent =
     today.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  loadFormData(); // Load trainer/jockey/odds form data from sheet
   loadRaces();
   loadLeaderboard();
 });
@@ -928,9 +929,10 @@ function renderRunnerPicker(race, submitted, sortMode) {
               </div>
             </div>
             <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;flex-shrink:0">
-              ${runnerScore.total.toFixed(0)}/52
+              ${runnerScore.total.toFixed(0)}/${runnerScore.max}
               ${isTopScore ? ' ⭐' : ''}
             </span>
+            ${runnerScore.bestOdds ? '<span style="font-size:11px;background:var(--amber-light);color:var(--amber);padding:1px 6px;border-radius:8px;font-weight:600;flex-shrink:0">' + runnerScore.bestOdds + '</span>' : ''}
             <button onclick="event.stopPropagation();toggleBreakdown('bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}', this)"
               style="font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);
               border-radius:6px;padding:1px 6px;cursor:pointer;flex-shrink:0">
@@ -1811,18 +1813,44 @@ async function showWeekDetail(player, week, tile) {
 // RUNNER SCORING ALGORITHM
 // =============================================
 
-// Draw bias by course — positive = low draws favoured, negative = high draws favoured
-// 0 = draw doesn't matter much (e.g. right-handed galloping tracks)
+// Form data loaded from Google Sheet (set by loadFormData())
+let FORM_DATA = {
+  trainerForm: {},      // trainer name -> { wins, runs, pct }
+  jockeyForm: {},       // jockey name -> { wins, runs, pct }
+  hotTrainers: {},      // trainer name -> { wins, runs, pct } (short term)
+  hotJockeys: {},       // jockey name -> { wins, runs, pct }
+  courseTrainers: {},   // "trainer|course" -> { wins, runs, pct }
+  courseJockeys: {},    // "jockey|course" -> { wins, runs, pct }
+  trainerJockeyCombos: {}, // "trainer|jockey|course" -> comboPct
+  horseOdds: {},        // horse name -> best odds string
+  loaded: false
+};
+
+// Load form data from Apps Script (reads FormData sheet)
+async function loadFormData() {
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getformdata');
+    const data = await res.json();
+    if (data.error || !data.trainerForm) return;
+    FORM_DATA = data;
+    FORM_DATA.loaded = true;
+    console.log('Form data loaded:', Object.keys(data.trainerForm).length, 'trainers');
+  } catch(e) {
+    console.log('Form data not available:', e.message);
+  }
+}
+
+// Draw bias by course
 const DRAW_BIAS = {
-  'Chester':        -2.5,  // Very tight track, low draws strongly favoured
-  'Ascot':           1.5,  // Straight course (5-6f) strongly favours HIGH draws (stands rail)
-  'York':           -1.0,  // Soft ground favours low, fast ground high
+  'Chester':        -2.5,
+  'Ascot':           1.5,
+  'York':           -1.0,
   'Sandown':        -0.5,
   'Haydock':        -0.5,
   'Newbury':         0.0,
-  'Goodwood':       -1.0,  // Quirky track, low draws on straight
-  'Epsom':          -1.5,  // Famous for wide draw disadvantage on Derby course
-  'Newmarket':       0.5,  // Rowley Mile favours high draws
+  'Goodwood':       -1.0,
+  'Epsom':          -1.5,
+  'Newmarket':       0.5,
   'Lingfield':      -1.0,
   'Wolverhampton':  -1.0,
   'Kempton':         0.0,
@@ -1832,7 +1860,7 @@ const DRAW_BIAS = {
   'Salisbury':      -0.5,
   'Bath':           -0.5,
   'Carlisle':       -0.5,
-  'Beverley':       -1.5,  // Very favourable low draws
+  'Beverley':       -1.5,
   'Catterick':      -1.0,
   'Ripon':          -0.5,
   'Thirsk':         -0.5,
@@ -1841,56 +1869,22 @@ const DRAW_BIAS = {
   'Ayr':             0.0,
   'Hamilton':       -1.0,
   'Chepstow':       -0.5,
-  'Cardiff':        -0.5,
-};
-
-// Top trainers — bonus points for elite stables
-const TOP_TRAINERS = {
-  // UK flat elite
-  "John Gosden": 2, "Charlie Appleby": 2, "Aidan O'Brien": 2,
-  "A P O'Brien": 2, "Joseph O'Brien": 1.5, "AP O'Brien": 2,
-  "Roger Varian": 1.5, "William Haggas": 1.5, "Andrew Balding": 1,
-  "Ralph Beckett": 1, "Richard Hannon": 1, "Mark Johnston": 1,
-  "Kevin Ryan": 1, "Clive Cox": 1, "Tim Easterby": 0.5,
-  "David Menuisier": 1, "John & Thady Gosden": 2,
-  "Simon & Ed Crisford": 1, "Ed Crisford": 1, "Simon Crisford": 1,
-  "Karl Burke": 1, "Hugo Palmer": 0.5, "James Owen": 0.5,
-  "Harry Eustace": 0.5, "George Boughey": 0.5, "Wesley A Ward": 1,
-  "Dermot Weld": 1, "Gavin Cromwell": 0.5,
-  // UK jumps
-  "Willie Mullins": 2, "Nicky Henderson": 2, "Paul Nicholls": 1.5,
-  "Dan Skelton": 1, "Kim Bailey": 0.5,
-};
-
-// Top jockeys — bonus points
-const TOP_JOCKEYS = {
-  "Frankie Dettori": 2, "Ryan Moore": 2, "William Buick": 2,
-  "James McDonald": 1.5, "Oisin Murphy": 1.5, "Tom Marquand": 1,
-  "Jim Crowley": 1, "David Egan": 1, "Adam Kirby": 0.5,
-  "Hollie Doyle": 1, "Harry Cobden": 1.5, "Paul Townend": 2,
-  "Rachael Blackmore": 1.5, "Patrick Mullins": 1,
-  "Hector Crouch": 0.5, "Kieran Shoemark": 0.5,
 };
 
 function scoreRunner(r, fieldSize, course, fieldRunners) {
   const breakdown = [];
   let total = 0;
 
-  // ── 1. FORM (max 15 pts) ─────────────────────────────────────────────
-  // Parse form string — most recent run is LAST character in Racing API format
+  // ── 1. FORM (max 15 pts) ──────────────────────────────────────────
   const formStr = (r.form || '').replace(/[^0-9PFURpu]/gi, '');
   let formScore = 0;
-  let formDetail = [];
   if (formStr.length > 0) {
-    // Last 4 runs, most recent first (form string reads left=oldest, right=most recent)
     const recent = formStr.split('').reverse().slice(0, 4);
-    const weights = [5, 3, 2, 1]; // most recent weighted most heavily
-    recent.forEach((f, i) => {
+    const weights = [5, 3, 2, 1];
+    recent.forEach(function(f, i) {
       const pos = parseInt(f);
       if (!isNaN(pos)) {
-        const pts = pos === 1 ? 3 : pos === 2 ? 2 : pos === 3 ? 1 : 0;
-        formScore += pts * weights[i];
-        if (pts > 0) formDetail.push(f);
+        formScore += (pos === 1 ? 3 : pos === 2 ? 2 : pos === 3 ? 1 : 0) * weights[i];
       }
     });
     formScore = Math.min(formScore, 15);
@@ -1898,15 +1892,13 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   total += formScore;
   breakdown.push({
     label: 'Recent form',
-    score: formScore,
-    max: 15,
+    score: formScore, max: 15,
     detail: formStr ? formStr.split('').reverse().slice(0,4).join('') + (formStr.length > 4 ? '…' : '') : 'No form'
   });
 
-  // ── 2. DAYS SINCE LAST RUN (max 8 pts) ─────────────────────────────
+  // ── 2. DAYS SINCE LAST RUN (max 8 pts) ───────────────────────────
   const days = parseInt(r.last_run);
-  let freshnessScore = 0;
-  let freshnessDetail = '';
+  let freshnessScore = 0, freshnessDetail = '';
   if (!isNaN(days)) {
     if      (days >= 14 && days <= 28) { freshnessScore = 8; freshnessDetail = days + 'd — ideal'; }
     else if (days >= 7  && days < 14)  { freshnessScore = 6; freshnessDetail = days + 'd — fresh'; }
@@ -1914,114 +1906,146 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     else if (days >= 43 && days <= 60) { freshnessScore = 4; freshnessDetail = days + 'd — fair'; }
     else if (days < 7)                 { freshnessScore = 3; freshnessDetail = days + 'd — very quick back'; }
     else                               { freshnessScore = 1; freshnessDetail = days + 'd — big break'; }
-  } else {
-    freshnessDetail = 'Unknown';
-  }
+  } else { freshnessDetail = 'Unknown'; }
   total += freshnessScore;
   breakdown.push({ label: 'Freshness', score: freshnessScore, max: 8, detail: freshnessDetail });
 
-  // ── 3. OFFICIAL RATING relative to field (max 10 pts) ──────────────
+  // ── 3. OFFICIAL RATING relative to field (max 10 pts) ────────────
   const orVal = parseInt(r.ofr) || 0;
-  let orScore = 0;
-  let orDetail = '';
+  let orScore = 0, orDetail = '';
   if (orVal > 0) {
-    const fieldORs = fieldRunners.map(h => parseInt(h.ofr) || 0).filter(v => v > 0);
+    const fieldORs = fieldRunners.map(function(h) { return parseInt(h.ofr) || 0; }).filter(function(v) { return v > 0; });
     if (fieldORs.length > 1) {
-      const maxOR = Math.max(...fieldORs);
-      const minOR = Math.min(...fieldORs);
-      const range = maxOR - minOR || 1;
-      orScore = Math.round(((orVal - minOR) / range) * 10);
-      orDetail = 'OR ' + orVal + ' (' + (orVal === maxOR ? 'top rated' : (orVal - minOR) + ' off top') + ')';
-    } else {
-      orScore = 5;
-      orDetail = 'OR ' + orVal;
-    }
-  } else {
-    orDetail = 'No OR (Group/Listed)';
-  }
+      const maxOR = Math.max.apply(null, fieldORs);
+      const minOR = Math.min.apply(null, fieldORs);
+      orScore = Math.round(((orVal - minOR) / (maxOR - minOR || 1)) * 10);
+      orDetail = 'OR ' + orVal + (orVal === maxOR ? ' (top rated)' : ' (' + (maxOR - orVal) + ' off top)');
+    } else { orScore = 5; orDetail = 'OR ' + orVal; }
+  } else { orDetail = 'No OR (Group/Listed)'; }
   total += orScore;
   breakdown.push({ label: 'Official Rating', score: orScore, max: 10, detail: orDetail });
 
-  // ── 4. DRAW (max 6 pts) ─────────────────────────────────────────────
+  // ── 4. DRAW (max 6 pts) ───────────────────────────────────────────
   const drawNum = parseInt(r.draw);
   const bias = DRAW_BIAS[course] || 0;
-  let drawScore = 3; // neutral
-  let drawDetail = '';
+  let drawScore = 3, drawDetail = '';
   if (!isNaN(drawNum) && fieldSize > 0 && Math.abs(bias) > 0) {
-    // Normalise draw position (0 = stall 1, 1 = highest stall)
     const normDraw = (drawNum - 1) / Math.max(fieldSize - 1, 1);
-    // bias < 0 means low draws good: score high when normDraw is low
-    const rawScore = bias < 0 ? (1 - normDraw) : normDraw;
-    drawScore = Math.round(rawScore * 6);
-    const bias_label = Math.abs(bias) >= 2 ? 'strong' : Math.abs(bias) >= 1 ? 'moderate' : 'slight';
-    const favour = bias < 0 ? 'low' : 'high';
-    drawDetail = 'Draw ' + drawNum + ' — ' + bias_label + ' ' + favour + ' draw bias at ' + course;
+    drawScore = Math.round((bias < 0 ? (1 - normDraw) : normDraw) * 6);
+    const biasLabel = Math.abs(bias) >= 2 ? 'strong' : Math.abs(bias) >= 1 ? 'moderate' : 'slight';
+    drawDetail = 'Draw ' + drawNum + ' — ' + biasLabel + ' ' + (bias < 0 ? 'low' : 'high') + ' bias at ' + course;
   } else if (isNaN(drawNum)) {
-    drawScore = 3;
-    drawDetail = 'No draw (jumps/no stalls)';
+    drawScore = 3; drawDetail = 'No draw (jumps/no stalls)';
   } else {
-    drawScore = 3;
-    drawDetail = 'Draw ' + drawNum + ' — neutral course';
+    drawScore = 3; drawDetail = 'Draw ' + drawNum + ' — neutral course';
   }
   total += drawScore;
   breakdown.push({ label: 'Draw', score: drawScore, max: 6, detail: drawDetail });
 
-  // ── 5. WEIGHT relative to field (max 5 pts) ─────────────────────────
+  // ── 5. WEIGHT relative to field (max 5 pts) ──────────────────────
   const lbs = parseInt(r.lbs);
-  let weightScore = 0;
-  let weightDetail = '';
+  let weightScore = 0, weightDetail = '';
   if (!isNaN(lbs) && lbs > 0) {
-    const fieldWeights = fieldRunners.map(h => parseInt(h.lbs) || 0).filter(v => v > 0);
+    const fieldWeights = fieldRunners.map(function(h) { return parseInt(h.lbs) || 0; }).filter(function(v) { return v > 0; });
     if (fieldWeights.length > 1) {
-      const maxLbs = Math.max(...fieldWeights);
-      const minLbs = Math.min(...fieldWeights);
-      const range = maxLbs - minLbs || 1;
-      // Lower weight = better in handicaps
-      weightScore = Math.round(((maxLbs - lbs) / range) * 5);
+      const maxLbs = Math.max.apply(null, fieldWeights);
+      const minLbs = Math.min.apply(null, fieldWeights);
+      weightScore = Math.round(((maxLbs - lbs) / (maxLbs - minLbs || 1)) * 5);
       weightDetail = lbs + 'lbs (' + (lbs === minLbs ? 'lightest' : lbs === maxLbs ? 'top weight' : (lbs - minLbs) + 'lbs above minimum') + ')';
-    } else {
-      weightScore = 3;
-      weightDetail = lbs + 'lbs';
-    }
-  } else {
-    weightDetail = 'Unknown';
-  }
+    } else { weightScore = 3; weightDetail = lbs + 'lbs'; }
+  } else { weightDetail = 'Unknown'; }
   total += weightScore;
   breakdown.push({ label: 'Weight', score: weightScore, max: 5, detail: weightDetail });
 
-  // ── 6. TRAINER (max 4 pts) ──────────────────────────────────────────
-  const trainerName = r.trainer || '';
-  const trainerScore = TOP_TRAINERS[trainerName] || 0;
+  // ── 6. TRAINER (max 6 pts) — uses live 30-day % if available ─────
+  const trainerName = (r.trainer || '').trim();
+  let trainerScore = 0, trainerDetail = trainerName || 'Unknown';
+  if (FORM_DATA.loaded && trainerName) {
+    // Check hot trainer (short-term form) first — bonus 0.5pts
+    const hot = FORM_DATA.hotTrainers[trainerName];
+    const form30 = FORM_DATA.trainerForm[trainerName];
+    const courseKey = trainerName + '|' + course;
+    const courseForm = FORM_DATA.courseTrainers[courseKey];
+
+    if (form30) {
+      // Scale 30-day % to 0-4pts (25%+ = 4pts, 20% = 3pts, 15% = 2pts, 10% = 1pt)
+      trainerScore = Math.min(4, Math.round(form30.pct / 6.25));
+      trainerDetail = trainerName + ' ' + form30.pct + '% (30d, ' + form30.wins + 'W/' + form30.runs + 'R)';
+    }
+    if (hot) {
+      trainerScore = Math.min(4, trainerScore + 0.5);
+      trainerDetail += ' 🔥';
+    }
+    if (courseForm) {
+      trainerScore = Math.min(4, trainerScore + 0.5);
+      trainerDetail += ' | Course: ' + courseForm.pct + '%';
+    }
+    if (!form30) trainerDetail = trainerName + ' (no recent data)';
+  } else {
+    // Fallback to hardcoded list if form data not loaded
+    const FALLBACK = {
+      "John Gosden": 2, "John & Thady Gosden": 2, "Charlie Appleby": 2,
+      "Aidan O'Brien": 2, "A P O'Brien": 2, "AP O'Brien": 2,
+      "Roger Varian": 2, "William Haggas": 2, "Andrew Balding": 1.5,
+      "Ralph Beckett": 1.5, "Richard Hannon": 1.5, "Joseph O'Brien": 1.5,
+      "Joseph Patrick O'Brien": 1.5, "Saeed bin Suroor": 1.5,
+    };
+    trainerScore = FALLBACK[trainerName] || 0;
+    trainerDetail = trainerName + (trainerScore > 0 ? ' ★' : '');
+  }
   total += trainerScore;
-  breakdown.push({
-    label: 'Trainer',
-    score: trainerScore,
-    max: 4,
-    detail: trainerName || 'Unknown' + (trainerScore > 0 ? ' ★' : '')
-  });
+  breakdown.push({ label: 'Trainer', score: trainerScore, max: 6, detail: trainerDetail });
 
-  // ── 7. JOCKEY (max 4 pts) ───────────────────────────────────────────
+  // ── 7. JOCKEY (max 6 pts) — uses live 30-day % if available ──────
   const jockeyName = (r.jockey || '').replace(/\([0-9]+\)$/, '').trim();
-  const jockeyScore = TOP_JOCKEYS[jockeyName] || 0;
-  total += jockeyScore;
-  breakdown.push({
-    label: 'Jockey',
-    score: jockeyScore,
-    max: 4,
-    detail: jockeyName || 'Unknown' + (jockeyScore > 0 ? ' ★' : '')
-  });
+  let jockeyScore = 0, jockeyDetail = jockeyName || 'Unknown';
+  if (FORM_DATA.loaded && jockeyName) {
+    const hot = FORM_DATA.hotJockeys[jockeyName];
+    const form30 = FORM_DATA.jockeyForm[jockeyName];
+    const courseKey = jockeyName + '|' + course;
+    const courseForm = FORM_DATA.courseJockeys[courseKey];
+    const comboKey = (trainerName + '|' + jockeyName + '|' + course);
+    const combo = FORM_DATA.trainerJockeyCombos[comboKey];
 
-  return { total: Math.round(total * 10) / 10, max: 52, breakdown };
+    if (form30) {
+      jockeyScore = Math.min(4, Math.round(form30.pct / 6.25));
+      jockeyDetail = jockeyName + ' ' + form30.pct + '% (30d, ' + form30.wins + 'W/' + form30.runs + 'R)';
+    }
+    if (hot) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' 🔥'; }
+    if (courseForm) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' | Course: ' + courseForm.pct + '%'; }
+    if (combo) { jockeyScore = Math.min(4, jockeyScore + 0.5); jockeyDetail += ' | Combo: ' + combo + '%'; }
+    if (!form30) jockeyDetail = jockeyName + ' (no recent data)';
+  } else {
+    const FALLBACK = {
+      "Ryan Moore": 2, "William Buick": 2, "Oisin Murphy": 2, "Frankie Dettori": 2,
+      "James McDonald": 2, "Tom Marquand": 1.5, "Jim Crowley": 1.5,
+      "Hollie Doyle": 1.5, "David Egan": 1.5, "Rossa Ryan": 1.5,
+      "Dylan Browne McMonagle": 1.5, "Colin Keane": 1.5,
+      "Paul Townend": 2, "Rachael Blackmore": 1.5, "Harry Cobden": 1.5,
+    };
+    jockeyScore = FALLBACK[jockeyName] || 0;
+    jockeyDetail = jockeyName + (jockeyScore > 0 ? ' ★' : '');
+  }
+  total += jockeyScore;
+  breakdown.push({ label: 'Jockey', score: jockeyScore, max: 6, detail: jockeyDetail });
+
+  // ── 8. BEST ODDS indicator (informational only, no score) ─────────
+  const oddsKey = (r.name || '').toLowerCase();
+  const bestOdds = FORM_DATA.horseOdds[oddsKey] || null;
+  if (bestOdds) {
+    breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
+  }
+
+  return { total: Math.round(total * 10) / 10, max: 56, breakdown: breakdown, bestOdds: bestOdds };
 }
 
 function renderScoreBar(score, max, color) {
   const pct = Math.round((score / max) * 100);
   color = color || 'var(--green)';
-  return `<div style="height:4px;background:var(--gray-light);border-radius:2px;flex:1">
-    <div style="width:\${pct}%;height:100%;background:\${color};border-radius:2px;transition:width 0.3s"></div>
-  </div>`;
+  return '<div style="height:4px;background:var(--gray-light);border-radius:2px;flex:1">' +
+    '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:2px;transition:width 0.3s"></div>' +
+  '</div>';
 }
-
 </script>
 </body>
 </html>
