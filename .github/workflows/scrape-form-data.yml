@@ -1,0 +1,38 @@
+name: Scrape Racing Form Data
+
+on:
+  # Run daily at 7:30am UK time (6:30am UTC — adjusts for BST automatically via schedule)
+  schedule:
+    - cron: '30 6 * * *'
+
+  # Also allow manual trigger from the Actions tab in GitHub
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Run scraper
+        env:
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+        run: node scrape.js
+
+      - name: Log completion
+        if: success()
+        run: echo "Form data updated successfully at $(date)"
+
+      - name: Log failure
+        if: failure()
+        run: echo "Scrape FAILED at $(date) — check logs above"
