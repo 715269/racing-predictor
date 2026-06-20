@@ -59,25 +59,24 @@ async function sendTable(name, payload) {
       hostname: url.hostname,
       path: url.pathname + url.search,
       method: 'POST',
-      headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) }
+      headers: { 'Content-Type': 'text/plain;charset=utf-8', 'Content-Length': Buffer.byteLength(body) }
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          // Apps Script redirects to the computed result — fetch it with GET, not POST
           const redirectUrl = new URL(res.headers.location);
           const req2 = https.request({
             hostname: redirectUrl.hostname,
             path: redirectUrl.pathname + redirectUrl.search,
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) }
+            method: 'GET'
           }, (res2) => {
             let data2 = '';
             res2.on('data', chunk => data2 += chunk);
             res2.on('end', () => resolve({ status: res2.statusCode, body: data2 }));
           });
           req2.on('error', reject);
-          req2.write(body);
           req2.end();
         } else {
           resolve({ status: res.statusCode, body: data });
@@ -108,6 +107,24 @@ async function sendTable(name, payload) {
   });
 
   await new Promise(r => setTimeout(r, 2000));
+
+  // ── DEBUG: dump page info so we can see what Puppeteer actually got ──
+  const debugInfo = await page.evaluate(() => {
+    const headings = Array.from(document.querySelectorAll('h1,h2,h3')).map(h => h.tagName + ': ' + h.textContent.trim());
+    const tableCount = document.querySelectorAll('table').length;
+    const bodyLength = document.body.innerText.length;
+    const title = document.title;
+    const hasConsentBanner = document.body.innerText.toLowerCase().includes('cookies') && document.body.innerText.toLowerCase().includes('accept');
+    return { headings: headings.slice(0, 20), tableCount, bodyLength, title, hasConsentBanner };
+  });
+  console.log('--- DEBUG INFO ---');
+  console.log('Page title:', debugInfo.title);
+  console.log('Body text length:', debugInfo.bodyLength);
+  console.log('Table count on page:', debugInfo.tableCount);
+  console.log('Possible cookie banner blocking content:', debugInfo.hasConsentBanner);
+  console.log('Headings found (first 20):');
+  debugInfo.headings.forEach(h => console.log('  ' + h));
+  console.log('--- END DEBUG ---\n');
 
   // ── HOT TRAINERS ──────────────────────────────────────────────────
   console.log('Extracting Hot Trainers...');
