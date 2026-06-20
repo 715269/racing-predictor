@@ -1,5 +1,5 @@
-// scrape.js — scrapes horseracing.net/form and POSTs data to Apps Script
-// Runs via Puppeteer in GitHub Actions (headless Chrome)
+// scrape.js — scrapes horseracing.net/stats and POSTs data to Apps Script
+// Runs via Puppeteer in GitHub Actions
 
 const puppeteer = require('puppeteer');
 
@@ -11,101 +11,66 @@ if (!SCRIPT_URL) {
 }
 
 function parsePct(val) {
-  // Handle both "23%" and "0.23" from the site
   const cleaned = parseFloat(String(val || '').replace('%', '')) || 0;
   return cleaned > 1 ? cleaned / 100 : cleaned;
 }
 
-async function expandSection(page, headingText) {
-  // Find the section heading and click it if it's collapsed
-  await page.evaluate((text) => {
-    const headings = Array.from(document.querySelectorAll('h2, h3, .section-title, [class*="heading"], [class*="title"]'));
-    const match = headings.find(h => h.textContent.trim().includes(text));
-    if (match) {
-      // Click the heading or its parent if it's a toggle
-      const toggle = match.closest('[class*="accordion"], [class*="collapse"], [class*="expand"]') || match;
-      toggle.click();
-    }
-  }, headingText);
-  await new Promise(r => setTimeout(r, 1500)); // wait for animation
-}
+// Extract a table by matching the heading text immediately preceding it
+async function extractTableByHeading(page, headingText) {
+  return await page.evaluate((headingText) => {
+    const headings = Array.from(document.querySelectorAll('h2, h3'));
+    const heading = headings.find(h => h.textContent.trim() === headingText);
+    if (!heading) return [];
 
-async function extractTable(page, sectionText) {
-  return await page.evaluate((sectionText) => {
-    // Find the section containing this heading
-    const allText = document.body.innerText;
-    
-    // Find all tables on the page
-    const tables = Array.from(document.querySelectorAll('table'));
-    
-    // Find the one nearest to the heading text
-    let targetTable = null;
-    const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6,th,[class*="title"],[class*="heading"]'));
-    
-    for (const h of headings) {
-      if (h.textContent.includes(sectionText)) {
-        // Look for a table following this heading
-        let el = h;
-        while (el && el.tagName !== 'TABLE') {
-          if (el.nextElementSibling) {
-            el = el.nextElementSibling;
-            const tbl = el.tagName === 'TABLE' ? el : el.querySelector('table');
-            if (tbl) { targetTable = tbl; break; }
-          } else {
-            el = el.parentElement;
-          }
-        }
-        if (targetTable) break;
-      }
+    // Walk forward from the heading to find the next table
+    let el = heading.nextElementSibling;
+    let table = null;
+    let attempts = 0;
+    while (el && attempts < 10) {
+      if (el.tagName === 'TABLE') { table = el; break; }
+      const found = el.querySelector && el.querySelector('table');
+      if (found) { table = found; break; }
+      el = el.nextElementSibling;
+      attempts++;
     }
-    
-    if (!targetTable) return [];
-    
-    const rows = Array.from(targetTable.querySelectorAll('tr'));
-    const result = [];
-    
-    rows.forEach((row, i) => {
-      if (i === 0) return; // skip header
-      const cells = Array.from(row.querySelectorAll('td,th')).map(c => c.textContent.trim());
-      if (cells.length >= 2 && cells[0]) result.push(cells);
+    if (!table) return [];
+
+    const rows = Array.from(table.querySelectorAll('tbody tr, tr'));
+    const data = [];
+    rows.forEach(row => {
+      const cells = Array.from(row.querySelectorAll('td'));
+      if (cells.length === 0) return; // header row uses <th>, skip
+
+      // First cell often contains name + nested "Wins: X Runs: Y" text plus a link
+      const rowData = cells.map(c => c.innerText.trim());
+      data.push(rowData);
     });
-    
-    return result;
-  }, sectionText);
+    return data;
+  }, headingText);
 }
 
 async function sendTable(name, payload) {
   const https = require('https');
-  const http = require('http');
   const url = new URL(SCRIPT_URL);
   const body = JSON.stringify(payload);
 
   return new Promise((resolve, reject) => {
-    const lib = url.protocol === 'https:' ? https : http;
-    const req = lib.request({
+    const req = https.request({
       hostname: url.hostname,
       path: url.pathname + url.search,
       method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain',
-        'Content-Length': Buffer.byteLength(body)
-      }
+      headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) }
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
-        // Follow redirects (Apps Script uses 302)
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          console.log(`  Following redirect for ${name}...`);
           const redirectUrl = new URL(res.headers.location);
           const req2 = https.request({
             hostname: redirectUrl.hostname,
             path: redirectUrl.pathname + redirectUrl.search,
             method: 'POST',
-            headers: {
-              'Content-Type': 'text/plain',
-              'Content-Length': Buffer.byteLength(body)
-            }
+            headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) }
           }, (res2) => {
             let data2 = '';
             res2.on('data', chunk => data2 += chunk);
@@ -126,7 +91,7 @@ async function sendTable(name, payload) {
 }
 
 (async () => {
-  console.log('Starting horseracing.net scrape...');
+  console.log('Starting horseracing.net/stats scrape...');
   console.log('Time:', new Date().toISOString());
 
   const browser = await puppeteer.launch({
@@ -136,66 +101,54 @@ async function sendTable(name, payload) {
   const page = await browser.newPage();
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36');
 
-  console.log('Loading horseracing.net/form ...');
-  await page.goto('https://www.horseracing.net/form', {
+  console.log('Loading horseracing.net/stats ...');
+  await page.goto('https://www.horseracing.net/stats', {
     waitUntil: 'networkidle2',
     timeout: 60000
   });
 
-  // Give JS tables time to render
-  await new Promise(r => setTimeout(r, 3000));
-
-  // Expand all collapsible sections
-  console.log('Expanding sections...');
-  const sections = ['Hot Trainers', 'Hot Jockeys', 'Top Course Trainers', 'Course & Distance Winners'];
-  for (const s of sections) {
-    await expandSection(page, s);
-  }
+  await new Promise(r => setTimeout(r, 2000));
 
   // ── HOT TRAINERS ──────────────────────────────────────────────────
   console.log('Extracting Hot Trainers...');
-  const trainerRows = await extractTable(page, 'Hot Trainers');
-  const hotTrainers = trainerRows.map(r => ({
-    name: r[0],
-    wins: r[1],
-    runs: r[2],
-    pct:  parsePct(r[3])
-  })).filter(r => r.name && r.name !== 'TRAINER');
+  const trainerRows = await extractTableByHeading(page, 'Hot Trainers');
+  const hotTrainers = trainerRows.map(r => {
+    // r[0] is name (may include nested Wins/Runs text — take first line only)
+    const name = (r[0] || '').split('\n')[0].trim();
+    return { name, wins: r[1], runs: r[2], pct: parsePct(r[3]) };
+  }).filter(r => r.name);
   console.log(`  Found ${hotTrainers.length} trainers`);
 
   // ── HOT JOCKEYS ───────────────────────────────────────────────────
   console.log('Extracting Hot Jockeys...');
-  const jockeyRows = await extractTable(page, 'Hot Jockeys');
-  const hotJockeys = jockeyRows.map(r => ({
-    name: r[0],
-    wins: r[1],
-    runs: r[2],
-    pct:  parsePct(r[3])
-  })).filter(r => r.name && r.name !== 'JOCKEY');
+  const jockeyRows = await extractTableByHeading(page, 'Hot Jockeys');
+  const hotJockeys = jockeyRows.map(r => {
+    const name = (r[0] || '').split('\n')[0].trim();
+    return { name, wins: r[1], runs: r[2], pct: parsePct(r[3]) };
+  }).filter(r => r.name);
   console.log(`  Found ${hotJockeys.length} jockeys`);
 
-  // ── COURSE TRAINERS ───────────────────────────────────────────────
-  console.log('Extracting Course Trainers...');
-  const courseTrainerRows = await extractTable(page, 'Top Course Trainers');
-  const courseTrainers = courseTrainerRows.map(r => ({
-    name:   r[0],
-    course: r[1],
-    wins:   r[2],
-    runs:   r[3],
-    pct:    parsePct(r[4])
-  })).filter(r => r.name && r.course);
+  // ── TOP COURSE TRAINERS ───────────────────────────────────────────
+  console.log('Extracting Top Course Trainers...');
+  const courseTrainerRows = await extractTableByHeading(page, 'Top Course Trainers');
+  const courseTrainers = courseTrainerRows.map(r => {
+    const name = (r[0] || '').split('\n')[0].trim();
+    const course = (r[1] || '').split('\n')[0].trim();
+    return { name, course, wins: r[2], runs: r[3], pct: parsePct(r[4]) };
+  }).filter(r => r.name && r.course);
   console.log(`  Found ${courseTrainers.length} course trainer rows`);
 
-  // ── C&D WINNERS ───────────────────────────────────────────────────
-  console.log('Extracting C&D Winners...');
-  const cdRows = await extractTable(page, 'Course & Distance Winners');
-  const cdWinners = cdRows.map(r => ({
-    horse:   r[0],
-    trainer: r[1],
-    race:    r[2],
-    odds:    r[3] || ''
-  })).filter(r => r.horse && r.trainer);
-  console.log(`  Found ${cdWinners.length} C&D winners`);
+  // ── LONGEST TRAVELLERS (used in place of C&D Winners — see note) ──
+  console.log('Extracting Longest Travellers...');
+  const travellerRows = await extractTableByHeading(page, 'Longest Travellers');
+  const cdWinners = travellerRows.map(r => {
+    const horse = (r[0] || '').split('\n')[0].trim();
+    const trainer = (r[1] || '').split('\n')[0].trim();
+    const race = (r[2] || '').split('\n')[0].trim();
+    const odds = r[4] || '';
+    return { horse, trainer, race, odds };
+  }).filter(r => r.horse && r.trainer);
+  console.log(`  Found ${cdWinners.length} traveller rows`);
 
   await browser.close();
 
@@ -214,13 +167,13 @@ async function sendTable(name, payload) {
       const result = await sendTable(t.name, t.payload);
       const parsed = JSON.parse(result.body);
       if (parsed.success) {
-        console.log(`  ✓ ${t.name}: saved OK`);
+        console.log(`  - ${t.name}: saved OK`);
       } else {
-        console.error(`  ✗ ${t.name}: ${parsed.error || 'unknown error'}`);
+        console.error(`  X ${t.name}: ${parsed.error || 'unknown error'}`);
         allOk = false;
       }
     } catch (e) {
-      console.error(`  ✗ ${t.name} failed: ${e.message}`);
+      console.error(`  X ${t.name} failed: ${e.message}`);
       allOk = false;
     }
   }
@@ -229,7 +182,7 @@ async function sendTable(name, payload) {
   console.log(`  Hot Trainers:    ${hotTrainers.length} rows`);
   console.log(`  Hot Jockeys:     ${hotJockeys.length} rows`);
   console.log(`  Course Trainers: ${courseTrainers.length} rows`);
-  console.log(`  C&D Winners:     ${cdWinners.length} rows`);
+  console.log(`  Longest Travellers: ${cdWinners.length} rows`);
 
   if (!allOk) {
     console.error('\nOne or more tables failed to save.');
