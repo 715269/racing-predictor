@@ -15,14 +15,14 @@ function parsePct(val) {
   return cleaned > 1 ? cleaned / 100 : cleaned;
 }
 
-// Extract a table by matching the heading text immediately preceding it
+// Extract a table by matching the heading text immediately preceding it.
+// Returns { headers: [...], rows: [[...], ...] }
 async function extractTableByHeading(page, headingText) {
   return await page.evaluate((headingText) => {
     const headings = Array.from(document.querySelectorAll('h2, h3'));
     const heading = headings.find(h => h.textContent.trim() === headingText);
-    if (!heading) return [];
+    if (!heading) return { headers: [], rows: [] };
 
-    // Walk forward from the heading to find the next table
     let el = heading.nextElementSibling;
     let table = null;
     let attempts = 0;
@@ -33,19 +33,19 @@ async function extractTableByHeading(page, headingText) {
       el = el.nextElementSibling;
       attempts++;
     }
-    if (!table) return [];
+    if (!table) return { headers: [], rows: [] };
+
+    const headerCells = Array.from(table.querySelectorAll('thead th, tr th'));
+    const headers = headerCells.map(c => c.innerText.trim());
 
     const rows = Array.from(table.querySelectorAll('tbody tr, tr'));
     const data = [];
     rows.forEach(row => {
       const cells = Array.from(row.querySelectorAll('td'));
-      if (cells.length === 0) return; // header row uses <th>, skip
-
-      // First cell often contains name + nested "Wins: X Runs: Y" text plus a link
-      const rowData = cells.map(c => c.innerText.trim());
-      data.push(rowData);
+      if (cells.length === 0) return;
+      data.push(cells.map(c => c.innerText.trim()));
     });
-    return data;
+    return { headers, rows: data };
   }, headingText);
 }
 
@@ -149,9 +149,9 @@ async function sendTable(name, payload) {
 
   // ── HOT TRAINERS ──────────────────────────────────────────────────
   console.log('Extracting Hot Trainers...');
-  const trainerRows = await extractTableByHeading(page, 'Hot Trainers');
-  const hotTrainers = trainerRows.map(r => {
-    // r[0] is name (may include nested Wins/Runs text — take first line only)
+  const trainerTable = await extractTableByHeading(page, 'Hot Trainers');
+  console.log(`  Headers: [${trainerTable.headers.join(', ')}]`);
+  const hotTrainers = trainerTable.rows.map(r => {
     const name = (r[0] || '').split('\n')[0].trim();
     return { name, wins: r[1], runs: r[2], pct: parsePct(r[3]) };
   }).filter(r => r.name);
@@ -159,8 +159,9 @@ async function sendTable(name, payload) {
 
   // ── HOT JOCKEYS ───────────────────────────────────────────────────
   console.log('Extracting Hot Jockeys...');
-  const jockeyRows = await extractTableByHeading(page, 'Hot Jockeys');
-  const hotJockeys = jockeyRows.map(r => {
+  const jockeyTable = await extractTableByHeading(page, 'Hot Jockeys');
+  console.log(`  Headers: [${jockeyTable.headers.join(', ')}]`);
+  const hotJockeys = jockeyTable.rows.map(r => {
     const name = (r[0] || '').split('\n')[0].trim();
     return { name, wins: r[1], runs: r[2], pct: parsePct(r[3]) };
   }).filter(r => r.name);
@@ -168,30 +169,55 @@ async function sendTable(name, payload) {
 
   // ── TOP COURSE TRAINERS ───────────────────────────────────────────
   console.log('Extracting Top Course Trainers...');
-  const courseTrainerRows = await extractTableByHeading(page, 'Top Course Trainers');
-  const courseTrainers = courseTrainerRows.map(r => {
+  const courseTrainerTable = await extractTableByHeading(page, 'Top Course Trainers');
+  console.log(`  Headers: [${courseTrainerTable.headers.join(', ')}]`);
+  const courseTrainers = courseTrainerTable.rows.map(r => {
     const name = (r[0] || '').split('\n')[0].trim();
     const course = (r[1] || '').split('\n')[0].trim();
     return { name, course, wins: r[2], runs: r[3], pct: parsePct(r[4]) };
   }).filter(r => r.name && r.course);
   console.log(`  Found ${courseTrainers.length} course trainer rows`);
 
-  // ── LONGEST TRAVELLERS (used in place of C&D Winners — see note) ──
-  console.log('Extracting Longest Travellers...');
-  const travellerRows = await extractTableByHeading(page, 'Longest Travellers');
-  const cdWinners = travellerRows.map(r => {
+  // ── COURSE & DISTANCE WINNERS ──────────────────────────────────────
+  console.log('Extracting Course & Distance Winners...');
+  const cdTable = await extractTableByHeading(page, 'Course & Distance Winners');
+  console.log(`  Headers: [${cdTable.headers.join(', ')}]`);
+  // Column order isn't confirmed yet, so log a sample row to verify mapping
+  if (cdTable.rows.length > 0) {
+    console.log('  Sample row:', JSON.stringify(cdTable.rows[0]));
+  }
+  // Map by position, assuming: [runner/horse, trainer, race, ...maybe odds]
+  // The last cell is taken as odds if it looks like odds (contains '/')
+  const cdWinners = cdTable.rows.map(r => {
     const horse = (r[0] || '').split('\n')[0].trim();
     const trainer = (r[1] || '').split('\n')[0].trim();
     const race = (r[2] || '').split('\n')[0].trim();
-    const odds = r[4] || '';
+    const lastCell = (r[r.length - 1] || '').trim();
+    const odds = /\d+\/\d+/.test(lastCell) ? lastCell : '';
     return { horse, trainer, race, odds };
   }).filter(r => r.horse && r.trainer);
-  console.log(`  Found ${cdWinners.length} traveller rows`);
+  console.log(`  Found ${cdWinners.length} C&D winner rows`);
+
+  // Fallback: if Course & Distance Winners heading wasn't found on the page,
+  // use Longest Travellers instead so the sheet still gets useful data
+  let finalCdWinners = cdWinners;
+  if (cdTable.rows.length === 0) {
+    console.log('  Course & Distance Winners table not found — falling back to Longest Travellers');
+    const travellerTable = await extractTableByHeading(page, 'Longest Travellers');
+    finalCdWinners = travellerTable.rows.map(r => {
+      const horse = (r[0] || '').split('\n')[0].trim();
+      const trainer = (r[1] || '').split('\n')[0].trim();
+      const race = (r[2] || '').split('\n')[0].trim();
+      const odds = r[4] || '';
+      return { horse, trainer, race, odds };
+    }).filter(r => r.horse && r.trainer);
+    console.log(`  Found ${finalCdWinners.length} traveller rows (fallback)`);
+  }
 
   await browser.close();
 
   // ── SAFETY GUARD: never overwrite good sheet data with an empty scrape ──
-  const totalRows = hotTrainers.length + hotJockeys.length + courseTrainers.length + cdWinners.length;
+  const totalRows = hotTrainers.length + hotJockeys.length + courseTrainers.length + finalCdWinners.length;
   if (totalRows === 0) {
     console.error('\nABORTING: all tables came back empty. This usually means the');
     console.error('site blocked the scraper (bot detection) or changed its layout.');
@@ -205,7 +231,7 @@ async function sendTable(name, payload) {
     { name: 'hotTrainers',    payload: { action: 'saveformdata', hotTrainers } },
     { name: 'hotJockeys',     payload: { action: 'saveformdata', hotJockeys } },
     { name: 'courseTrainers', payload: { action: 'saveformdata', courseTrainers } },
-    { name: 'cdWinners',      payload: { action: 'saveformdata', cdWinners } }
+    { name: 'cdWinners',      payload: { action: 'saveformdata', cdWinners: finalCdWinners } }
   ];
 
   let allOk = true;
@@ -229,7 +255,7 @@ async function sendTable(name, payload) {
   console.log(`  Hot Trainers:    ${hotTrainers.length} rows`);
   console.log(`  Hot Jockeys:     ${hotJockeys.length} rows`);
   console.log(`  Course Trainers: ${courseTrainers.length} rows`);
-  console.log(`  Longest Travellers: ${cdWinners.length} rows`);
+  console.log(`  C&D Winners:     ${finalCdWinners.length} rows`);
 
   if (!allOk) {
     console.error('\nOne or more tables failed to save.');
