@@ -242,6 +242,7 @@
   <button onclick="showPage('results')">Results</button>
   <button onclick="showPage('leaderboard')">Season</button>
   <button onclick="showPage('admin')">Admin</button>
+  <button onclick="showPage('analyzer')">Analyzer</button>
 </nav>
 
 <!-- PICKS PAGE -->
@@ -368,6 +369,59 @@
           Everyone will see the new selection next time they open the app.
         </p>
         <button class="btn btn-amber btn-full" onclick="resetWeekRaces()">Reset & re-pick races for this week</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ANALYZER PAGE -->
+<div id="page-analyzer" class="page">
+  <div id="analyzer-loading" class="notice" style="display:none">
+    <span class="spinner"></span> Loading analysis...
+  </div>
+  <div id="analyzer-error" class="notice" style="display:none;background:var(--red-light);color:var(--red);border:1px solid var(--red)"></div>
+  
+  <div id="analyzer-content" style="display:none">
+    <!-- Summary stats -->
+    <div class="card">
+      <div class="card-header">Algorithm Performance</div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--green)" id="analyzer-hit-rate">0%</div>
+            <div style="font-size:12px;color:var(--text-muted)">Winner in top 3</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--amber)" id="analyzer-failure-count">0</div>
+            <div style="font-size:12px;color:var(--text-muted)">Races analyzed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weight simulator -->
+    <div class="card">
+      <div class="card-header">Test Weight Adjustments</div>
+      <div class="card-body">
+        <div id="analyzer-weights-controls" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+        <button class="btn btn-green btn-full" onclick="testWeights()" id="analyzer-test-btn">Test New Weights</button>
+        <div id="analyzer-test-result" style="margin-top:12px;padding:12px;border-radius:8px;background:var(--green-light);color:var(--green);display:none;font-size:13px"></div>
+      </div>
+    </div>
+
+    <!-- Failure patterns -->
+    <div class="card">
+      <div class="card-header">Top Failure Patterns</div>
+      <div class="card-body">
+        <div id="analyzer-patterns" style="font-size:13px"></div>
+      </div>
+    </div>
+
+    <!-- Failure browser -->
+    <div class="card">
+      <div class="card-header">Failures (Score Gap)</div>
+      <div class="card-body">
+        <div id="analyzer-failures" style="font-size:13px;max-height:400px;overflow-y:auto"></div>
       </div>
     </div>
   </div>
@@ -2046,12 +2100,12 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     // Hot trainer bonus (+1.5)
     if (hot) {
       trainerScore = Math.min(5, trainerScore + 1.5);
-      trainerDetail += ' 🔥 (' + (hot.pct * 100).toFixed(0) + '% last 14d)';
+      trainerDetail += ' 🔥 (' + hot.pct + '% last 14d)';
     }
     // Course specialist bonus (+1)
     if (courseForm) {
       trainerScore = Math.min(5, trainerScore + 1);
-      trainerDetail += ' | ' + course + ' specialist ' + (courseForm.pct * 100).toFixed(0) + '%';
+      trainerDetail += ' | ' + course + ' specialist ' + courseForm.pct + '%';
     }
     if (!hot && !courseForm) trainerDetail += ' (no hot data)';
   } else {
@@ -2092,11 +2146,11 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
 
     if (hot) {
       jockeyScore = Math.min(5, jockeyScore + 1.5);
-      jockeyDetail += ' 🔥 (' + (hot.pct * 100).toFixed(0) + '% last 14d)';
+      jockeyDetail += ' 🔥 (' + hot.pct + '% last 14d)';
     }
     if (courseForm) {
       jockeyScore = Math.min(5, jockeyScore + 0.5);
-      jockeyDetail += ' | ' + course + ' ' + (courseForm.pct * 100).toFixed(0) + '%';
+      jockeyDetail += ' | ' + course + ' ' + courseForm.pct + '%';
     }
     if (combo) {
       jockeyScore = Math.min(5, jockeyScore + 0.5);
@@ -2139,6 +2193,148 @@ function renderScoreBar(score, max, color) {
     '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:2px;transition:width 0.3s"></div>' +
   '</div>';
 }
+
+// =============================================
+// ALGORITHM ANALYZER
+// =============================================
+
+// Load and display analyzer data when tab is opened
+async function loadAnalyzer() {
+  const content = document.getElementById('analyzer-content');
+  const loading = document.getElementById('analyzer-loading');
+  const error = document.getElementById('analyzer-error');
+  
+  loading.style.display = 'block';
+  content.style.display = 'none';
+  error.style.display = 'none';
+  
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
+    const data = await res.json();
+    
+    if (data.error) throw new Error(data.error);
+    
+    // Display summary
+    document.getElementById('analyzer-hit-rate').textContent = data.hitRate + '%';
+    document.getElementById('analyzer-failure-count').textContent = data.totalRaces;
+    
+    // Build weight controls
+    const weightsControl = document.getElementById('analyzer-weights-controls');
+    const weights = {
+      form_weight: { label: 'Form', current: 15 },
+      freshness_weight: { label: 'Freshness', current: 4 },
+      or_weight: { label: 'OR', current: 10 },
+      draw_weight: { label: 'Draw', current: 3 },
+      weight_weight: { label: 'Weight', current: 5 },
+      trainer_weight: { label: 'Trainer', current: 5 },
+      jockey_weight: { label: 'Jockey', current: 5 },
+      cd_weight: { label: 'C&D', current: 3 }
+    };
+    
+    weightsControl.innerHTML = Object.entries(weights).map(([key, val]) => `
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">${val.label}</label>
+        <input type="number" id="${key}" value="${val.current}" min="0" max="20" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px">
+      </div>
+    `).join('');
+    
+    // Display patterns
+    if (data.failures && data.failures.length > 0) {
+      const patterns = {};
+      data.failures.forEach(f => {
+        if (f.reasons) {
+          f.reasons.forEach(r => {
+            patterns[r] = (patterns[r] || 0) + 1;
+          });
+        }
+      });
+      
+      const patternHtml = Object.entries(patterns)
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => 
+          `<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+            <span>${reason}</span>
+            <strong>${count} races</strong>
+          </div>`
+        ).join('');
+      document.getElementById('analyzer-patterns').innerHTML = patternHtml || 'No patterns found';
+    }
+    
+    // Display failures
+    if (data.failures) {
+      const failureHtml = data.failures.slice(0, 10).map(f => `
+        <div style="padding:10px;border-bottom:1px solid var(--border);margin-bottom:8px">
+          <div style="font-weight:600;margin-bottom:4px">${f.course} ${f.time}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
+            Week ${f.week} — ${f.name}
+          </div>
+          <div style="background:var(--green-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+            <strong>Winner:</strong> ${f.winner} (${f.winnerScore}pts, ranked #${f.winnerRank})
+          </div>
+          <div style="background:var(--amber-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+            <strong>Top pick:</strong> ${f.topPick} (${f.topScore}pts) — <strong>Gap: ${f.scoreDiff}pts</strong>
+          </div>
+          ${f.reasons ? '<div style="font-size:11px;color:#666">' + f.reasons.join(' • ') + '</div>' : ''}
+        </div>
+      `).join('');
+      document.getElementById('analyzer-failures').innerHTML = failureHtml || 'No failures found';
+    }
+    
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch(e) {
+    loading.style.display = 'none';
+    error.style.display = 'block';
+    error.textContent = 'Error loading analysis: ' + e.message;
+  }
+}
+
+// Test weight adjustments
+async function testWeights() {
+  const btn = document.getElementById('analyzer-test-btn');
+  const result = document.getElementById('analyzer-test-result');
+  
+  btn.disabled = true;
+  result.style.display = 'none';
+  
+  try {
+    const params = new URLSearchParams({
+      action: 'testwweights',
+      form_weight: document.getElementById('form_weight').value || 15,
+      freshness_weight: document.getElementById('freshness_weight').value || 4,
+      or_weight: document.getElementById('or_weight').value || 10,
+      draw_weight: document.getElementById('draw_weight').value || 3,
+      weight_weight: document.getElementById('weight_weight').value || 5,
+      trainer_weight: document.getElementById('trainer_weight').value || 5,
+      jockey_weight: document.getElementById('jockey_weight').value || 5,
+      cd_weight: document.getElementById('cd_weight').value || 3
+    });
+    
+    const res = await fetch(SCRIPT_URL + '?' + params);
+    const data = await res.json();
+    
+    if (data.error) {
+      result.textContent = 'Error: ' + data.error;
+    } else {
+      result.textContent = `With new weights: ${data.hitsWithNewWeights} races hit (${data.newHitRate}%)`;
+    }
+    result.style.display = 'block';
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+    result.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Intercept showPage to load analyzer on first open
+const originalShowPage = window.showPage;
+window.showPage = function(name) {
+  originalShowPage(name);
+  if (name === 'analyzer') {
+    loadAnalyzer();
+  }
+};
 </script>
 </body>
 </html>
