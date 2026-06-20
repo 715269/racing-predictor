@@ -377,7 +377,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxrGUwDRJkM8HwfaEdRJBehb-qxo4vg02IA6hx2ZyszO_TSY0-kI_h5uTPlX63CRSglA/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyMpHNI0nx1rYUwixGrlw6xlmUn97C1TUxVnByyBqxXsPrIQFFH8wuA8uVvrtW1RWUhjA/exec';
 
 // =============================================
 // STATE
@@ -2046,12 +2046,12 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     // Hot trainer bonus (+1.5)
     if (hot) {
       trainerScore = Math.min(5, trainerScore + 1.5);
-      trainerDetail += ' 🔥 (' + hot.pct + '% last 14d)';
+      trainerDetail += ' 🔥 (' + (hot.pct * 100).toFixed(0) + '% last 14d)';
     }
     // Course specialist bonus (+1)
     if (courseForm) {
       trainerScore = Math.min(5, trainerScore + 1);
-      trainerDetail += ' | ' + course + ' specialist ' + courseForm.pct + '%';
+      trainerDetail += ' | ' + course + ' specialist ' + (courseForm.pct * 100).toFixed(0) + '%';
     }
     if (!hot && !courseForm) trainerDetail += ' (no hot data)';
   } else {
@@ -2092,11 +2092,11 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
 
     if (hot) {
       jockeyScore = Math.min(5, jockeyScore + 1.5);
-      jockeyDetail += ' 🔥 (' + hot.pct + '% last 14d)';
+      jockeyDetail += ' 🔥 (' + (hot.pct * 100).toFixed(0) + '% last 14d)';
     }
     if (courseForm) {
       jockeyScore = Math.min(5, jockeyScore + 0.5);
-      jockeyDetail += ' | ' + course + ' ' + courseForm.pct + '%';
+      jockeyDetail += ' | ' + course + ' ' + (courseForm.pct * 100).toFixed(0) + '%';
     }
     if (combo) {
       jockeyScore = Math.min(5, jockeyScore + 0.5);
