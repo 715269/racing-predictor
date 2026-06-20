@@ -106,7 +106,20 @@ async function sendTable(name, payload) {
     timeout: 60000
   });
 
-  await new Promise(r => setTimeout(r, 2000));
+  // Cloudflare-style "Just a moment..." challenge can appear before the real
+  // page loads. Wait for the real heading to appear, polling for up to 20s.
+  console.log('Waiting for real page content (past any security check)...');
+  try {
+    await page.waitForFunction(
+      () => document.title !== 'Just a moment...' && document.querySelectorAll('table').length > 0,
+      { timeout: 20000 }
+    );
+    console.log('Real content detected.');
+  } catch (e) {
+    console.log('WARNING: still no tables after 20s wait — may be blocked by bot detection.');
+  }
+
+  await new Promise(r => setTimeout(r, 1500));
 
   // ── DEBUG: dump page info so we can see what Puppeteer actually got ──
   const debugInfo = await page.evaluate(() => {
@@ -125,6 +138,14 @@ async function sendTable(name, payload) {
   console.log('Headings found (first 20):');
   debugInfo.headings.forEach(h => console.log('  ' + h));
   console.log('--- END DEBUG ---\n');
+
+  // Save a screenshot for diagnosis — uploaded as a GitHub Actions artifact
+  try {
+    await page.screenshot({ path: 'debug-screenshot.png', fullPage: true });
+    console.log('Saved debug-screenshot.png');
+  } catch (e) {
+    console.log('Could not save screenshot:', e.message);
+  }
 
   // ── HOT TRAINERS ──────────────────────────────────────────────────
   console.log('Extracting Hot Trainers...');
@@ -168,6 +189,15 @@ async function sendTable(name, payload) {
   console.log(`  Found ${cdWinners.length} traveller rows`);
 
   await browser.close();
+
+  // ── SAFETY GUARD: never overwrite good sheet data with an empty scrape ──
+  const totalRows = hotTrainers.length + hotJockeys.length + courseTrainers.length + cdWinners.length;
+  if (totalRows === 0) {
+    console.error('\nABORTING: all tables came back empty. This usually means the');
+    console.error('site blocked the scraper (bot detection) or changed its layout.');
+    console.error('Sheets were NOT touched — existing data is safe.');
+    process.exit(1);
+  }
 
   // ── SEND TO APPS SCRIPT (4 separate requests) ─────────────────────
   console.log('\nSending data to Google Sheet...');
