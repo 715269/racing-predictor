@@ -1,0 +1,2376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ITV Racing Predictor</title>
+<style>
+  :root {
+    --green: #1a6b3a;
+    --green-light: #e8f5ee;
+    --green-mid: #2d8a52;
+    --amber: #c47d0e;
+    --amber-light: #fef3dc;
+    --red: #b83232;
+    --red-light: #fdeaea;
+    --gray: #5a5a5a;
+    --gray-light: #f4f4f4;
+    --border: #ddd;
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --radius: 10px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #f0f2f0;
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: var(--green);
+    color: #fff;
+    padding: 16px 20px 14px;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.3px; }
+  header p  { font-size: 12px; opacity: 0.8; margin-top: 2px; }
+
+  nav {
+    display: flex;
+    background: #fff;
+    border-bottom: 2px solid var(--border);
+    overflow-x: auto;
+  }
+  nav button {
+    flex: 1; min-width: 80px;
+    padding: 12px 8px;
+    border: none; background: none;
+    font-size: 13px; font-weight: 500;
+    color: var(--text-muted); cursor: pointer;
+    border-bottom: 3px solid transparent;
+    transition: all 0.15s;
+  }
+  nav button.active {
+    color: var(--green);
+    border-bottom-color: var(--green);
+  }
+
+  .page { display: none; padding: 16px; max-width: 600px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  .card {
+    background: #fff;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--green);
+    color: #fff;
+    padding: 10px 14px;
+    font-weight: 600;
+    font-size: 14px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .card-header .time { font-size: 12px; opacity: 0.85; font-weight: 400; }
+  .card-body { padding: 14px; }
+
+  .btn {
+    display: inline-block;
+    padding: 10px 18px;
+    border-radius: 8px;
+    border: none; cursor: pointer;
+    font-size: 14px; font-weight: 500;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.87; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-green  { background: var(--green);  color: #fff; }
+  .btn-amber  { background: var(--amber);  color: #fff; }
+  .btn-outline {
+    background: #fff; color: var(--green);
+    border: 1.5px solid var(--green);
+  }
+  .btn-full { width: 100%; text-align: center; padding: 12px; }
+
+  select, input[type="text"] {
+    width: 100%; padding: 10px 12px;
+    border: 1.5px solid var(--border);
+    border-radius: 8px; font-size: 15px;
+    background: #fff; color: var(--text);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23666' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  select:focus, input[type="text"]:focus {
+    outline: none; border-color: var(--green);
+  }
+
+  label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--gray); }
+
+  .form-group { margin-bottom: 14px; }
+
+  .player-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px; margin-bottom: 14px;
+  }
+  .player-btn {
+    padding: 14px 10px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius);
+    background: #fff; cursor: pointer;
+    text-align: center; font-size: 15px; font-weight: 600;
+    transition: all 0.15s;
+  }
+  .player-btn.selected {
+    border-color: var(--green);
+    background: var(--green-light);
+    color: var(--green);
+  }
+  .player-btn .tick { display: none; }
+  .player-btn.selected .tick { display: inline; }
+
+  .race-tabs {
+    display: flex; overflow-x: auto; gap: 6px;
+    padding-bottom: 10px; margin-bottom: 14px;
+  }
+  .race-tab {
+    white-space: nowrap;
+    padding: 7px 13px;
+    border-radius: 20px;
+    border: 1.5px solid var(--border);
+    background: #fff; cursor: pointer;
+    font-size: 13px; font-weight: 500; color: var(--text-muted);
+    transition: all 0.15s;
+  }
+  .race-tab.active {
+    background: var(--green); color: #fff; border-color: var(--green);
+  }
+  .race-tab.done {
+    background: var(--green-light); border-color: var(--green-mid);
+    color: var(--green);
+  }
+
+  .pick-status {
+    font-size: 13px; padding: 8px 12px; border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .pick-status.picked { background: var(--green-light); color: var(--green); }
+  .pick-status.pending { background: var(--amber-light); color: var(--amber); }
+
+  .result-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .result-row:last-child { border-bottom: none; }
+  .result-row .horse { font-weight: 500; }
+  .result-row .pos { color: var(--text-muted); font-size: 13px; }
+
+  .points-badge {
+    display: inline-block; padding: 3px 9px;
+    border-radius: 12px; font-size: 13px; font-weight: 600;
+  }
+  .pts-3 { background: #fff8e1; color: #b8860b; border: 1.5px solid #e6c84a; }
+  .pts-2 { background: #e8f5ee; color: var(--green); border: 1.5px solid #7ec8a0; }
+  .pts-1 { background: #e8eef5; color: #2a5080; border: 1.5px solid #9ab4cc; }
+  .pts-0 { background: #f4f4f4; color: #888; border: 1.5px solid #ccc; }
+
+  .leaderboard-row {
+    display: flex; align-items: center;
+    padding: 12px 0; border-bottom: 1px solid var(--border);
+  }
+  .leaderboard-row:last-child { border-bottom: none; }
+  .lb-rank {
+    width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; margin-right: 12px;
+    flex-shrink: 0;
+  }
+  .lb-rank-1 { background: #ffd700; color: #7a5c00; }
+  .lb-rank-2 { background: #c0c0c0; color: #444; }
+  .lb-rank-3 { background: #cd7f32; color: #fff; }
+  .lb-rank-n { background: var(--gray-light); color: var(--gray); }
+  .lb-name { font-weight: 600; font-size: 15px; flex: 1; }
+  .lb-pts { font-size: 22px; font-weight: 700; color: var(--green); }
+  .lb-pts span { font-size: 12px; color: var(--text-muted); font-weight: 400; margin-left: 3px; }
+
+  .notice {
+    padding: 12px 14px; border-radius: 8px;
+    font-size: 14px; margin-bottom: 14px;
+    background: var(--amber-light); color: #7a4f00;
+    border-left: 4px solid var(--amber);
+  }
+  .notice.error { background: var(--red-light); color: var(--red); border-color: var(--red); }
+  .notice.success { background: var(--green-light); color: var(--green); border-color: var(--green-mid); }
+
+  .spinner {
+    display: inline-block; width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff; border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .text-muted { color: var(--text-muted); font-size: 13px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-12 { margin-top: 12px; }
+
+  .picks-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .picks-table th { text-align: left; padding: 6px 8px; color: var(--text-muted); font-weight: 500; border-bottom: 1.5px solid var(--border); }
+  .picks-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+  .picks-table tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🏇 ITV Racing Predictor</h1>
+  <p id="header-date">Loading...</p>
+</header>
+
+<nav>
+  <button class="active" onclick="showPage('picks')">Pick</button>
+  <button onclick="showPage('results')">Results</button>
+  <button onclick="showPage('leaderboard')">Season</button>
+  <button onclick="showPage('admin')">Admin</button>
+  <button onclick="showPage('analyzer')">Analyzer</button>
+</nav>
+
+<!-- PICKS PAGE -->
+<div id="page-picks" class="page active">
+  <div id="picks-loading" class="notice">
+    <span class="spinner" style="border-color:rgba(0,0,0,0.2);border-top-color:#7a4f00"></span>
+    Loading today's ITV races...
+  </div>
+
+  <!-- Step 0: Admin PIN gate -->
+  <div id="step-pin" style="display:none">
+    <div class="card">
+      <div class="card-header">Admin access</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Enter the admin PIN to select this week's races.</p>
+        <div class="form-group">
+          <input type="password" id="admin-pin" placeholder="PIN"
+            style="text-align:center;font-size:20px;letter-spacing:4px"
+            onkeydown="if(event.key==='Enter') checkPin()">
+        </div>
+        <button class="btn btn-green btn-full" onclick="checkPin()">Continue</button>
+        <div id="pin-error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;display:none">Incorrect PIN</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 0b: Filter courses (admin only) -->
+  <div id="step-filter" style="display:none">
+    <div class="card">
+      <div class="card-header">Which courses are on ITV today?</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Tick the courses being shown on ITV then tap Continue.</p>
+        <div id="course-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px"></div>
+        <button class="btn btn-green btn-full" onclick="applyFilter()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 1: Choose player -->
+  <div id="step-player" style="display:none">
+    <div class="card">
+      <div class="card-header">Who are you?</div>
+      <div class="card-body">
+        <div class="player-grid">
+          <button class="player-btn" onclick="selectPlayer('Ged')">Ged <span class="tick">✓</span></button>
+          <button class="player-btn" onclick="selectPlayer('Jayne')">Jayne <span class="tick">✓</span></button>
+          <button class="player-btn" onclick="selectPlayer('Kim')">Kim <span class="tick">✓</span></button>
+          <button class="player-btn" onclick="selectPlayer('Paul')">Paul <span class="tick">✓</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Pick races -->
+  <div id="step-races" style="display:none">
+    <div class="card">
+      <div class="card-header">
+        <span id="picking-as">Picking as: </span>
+        <button class="btn btn-outline" style="font-size:12px;padding:4px 10px" onclick="clearPlayer()">Change</button>
+      </div>
+      <div class="card-body">
+        <div id="race-tabs-container" class="race-tabs"></div>
+        <div id="race-pick-panel"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-body">
+        <div id="all-picks-summary"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RESULTS PAGE -->
+<div id="page-results" class="page">
+  <div id="results-loading" class="notice" style="display:none">
+    <span class="spinner" style="border-color:rgba(0,0,0,0.2);border-top-color:#7a4f00"></span>
+    Fetching results...
+  </div>
+  <div id="results-content">
+    <p class="text-muted" style="text-align:center;padding:30px 0">
+      Races will appear here after they have been run.
+    </p>
+  </div>
+</div>
+
+<!-- LEADERBOARD PAGE -->
+<div id="page-leaderboard" class="page">
+  <div id="leaderboard-loading" class="notice" style="display:none">
+    <span class="spinner" style="border-color:rgba(0,0,0,0.2);border-top-color:#7a4f00"></span>
+    Loading standings...
+  </div>
+  <div id="leaderboard-content">
+    <p class="text-muted" style="text-align:center;padding:30px 0">Loading...</p>
+  </div>
+</div>
+
+<!-- ADMIN PAGE -->
+<div id="page-admin" class="page">
+  <div id="admin-pin-gate">
+    <div class="card">
+      <div class="card-header">Admin access</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">Enter the admin PIN to access admin tools.</p>
+        <div class="form-group">
+          <input type="password" id="admin-tab-pin" placeholder="PIN"
+            style="text-align:center;font-size:20px;letter-spacing:4px"
+            onkeydown="if(event.key==='Enter') checkAdminTabPin()">
+        </div>
+        <button class="btn btn-green btn-full" onclick="checkAdminTabPin()">Unlock</button>
+        <div id="admin-tab-pin-error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;display:none">Incorrect PIN</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="admin-tools" style="display:none">
+    <div class="card">
+      <div class="card-header">This week's races — Week <span id="admin-week-num"></span></div>
+      <div class="card-body">
+        <div id="admin-current-races" style="margin-bottom:14px"></div>
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">
+          If the wrong courses or races were selected, you can reset and choose again.
+          Everyone will see the new selection next time they open the app.
+        </p>
+        <button class="btn btn-amber btn-full" onclick="resetWeekRaces()">Reset & re-pick races for this week</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ANALYZER PAGE -->
+<div id="page-analyzer" class="page">
+  <div id="analyzer-loading" class="notice" style="display:none">
+    <span class="spinner"></span> Loading analysis...
+  </div>
+  <div id="analyzer-error" class="notice" style="display:none;background:var(--red-light);color:var(--red);border:1px solid var(--red)"></div>
+  
+  <div id="analyzer-content" style="display:none">
+    <!-- Summary stats -->
+    <div class="card">
+      <div class="card-header">Algorithm Performance</div>
+      <div class="card-body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--green)" id="analyzer-hit-rate">0%</div>
+            <div style="font-size:12px;color:var(--text-muted)">Winner in top 3</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:28px;font-weight:700;color:var(--amber)" id="analyzer-failure-count">0</div>
+            <div style="font-size:12px;color:var(--text-muted)">Races analyzed</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weight simulator -->
+    <div class="card">
+      <div class="card-header">Test Weight Adjustments</div>
+      <div class="card-body">
+        <div id="analyzer-weights-controls" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px"></div>
+        <button class="btn btn-green btn-full" onclick="testWeights()" id="analyzer-test-btn">Test New Weights</button>
+        <div id="analyzer-test-result" style="margin-top:12px;padding:12px;border-radius:8px;background:var(--green-light);color:var(--green);display:none;font-size:13px"></div>
+      </div>
+    </div>
+
+    <!-- Failure patterns -->
+    <div class="card">
+      <div class="card-header">Top Failure Patterns</div>
+      <div class="card-body">
+        <div id="analyzer-patterns" style="font-size:13px"></div>
+      </div>
+    </div>
+
+    <!-- Failure browser -->
+    <div class="card">
+      <div class="card-header">Failures (Score Gap)</div>
+      <div class="card-body">
+        <div id="analyzer-failures" style="font-size:13px;max-height:400px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =============================================
+// CONFIGURATION — update this URL after deploying Apps Script
+// =============================================
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZrP3klFOuYIcV-Ihw2gN9dc4fq7t_5fASmnzGLlsf2KzC6AZjFdR8JBG0PMGMow78Pw/exec';
+
+// =============================================
+// STATE
+// =============================================
+let currentPlayer = localStorage.getItem('racing_player') || null;
+let allRaces = [];        // all races from API
+let races = [];           // filtered to ITV courses
+let runners = {};         // race_id -> runners array
+let picks = {};           // player -> race_id -> horse_name
+let submittedPicks = {};  // player -> race_id -> true
+let currentRaceIdx = 0;
+let weekNumber = getWeekNumber();
+
+// =============================================
+// INIT
+// =============================================
+document.addEventListener('DOMContentLoaded', () => {
+  const today = new Date();
+  document.getElementById('header-date').textContent =
+    today.toLocaleDateString('en-GB', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+  loadFormData(); // Load trainer/jockey/odds form data from sheet
+  loadRaces();
+  loadLeaderboard();
+});
+
+function getWeekNumber() {
+  // Week number = ISO week of year, good enough for our purposes
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+  const week1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - week1) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+}
+
+// =============================================
+// NAV
+// =============================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  event.target.classList.add('active');
+  if (name === 'results') loadResults();
+  if (name === 'leaderboard') loadLeaderboard();
+  if (name === 'admin') initAdminTab();
+}
+
+// =============================================
+// ADMIN TAB
+// =============================================
+function checkAdminTabPin() {
+  const entered = document.getElementById('admin-tab-pin').value;
+  if (entered === ADMIN_PIN) {
+    document.getElementById('admin-pin-gate').style.display = 'none';
+    document.getElementById('admin-tools').style.display = 'block';
+    loadAdminCurrentRaces();
+  } else {
+    document.getElementById('admin-tab-pin-error').style.display = 'block';
+    document.getElementById('admin-tab-pin').value = '';
+  }
+}
+
+function initAdminTab() {
+  document.getElementById('admin-week-num').textContent = weekNumber;
+  // Reset to PIN gate each time the tab is opened
+  document.getElementById('admin-pin-gate').style.display = 'block';
+  document.getElementById('admin-tools').style.display = 'none';
+  document.getElementById('admin-tab-pin').value = '';
+  document.getElementById('admin-tab-pin-error').style.display = 'none';
+}
+
+async function loadAdminCurrentRaces() {
+  const container = document.getElementById('admin-current-races');
+  container.innerHTML = '<p class="text-muted" style="font-size:13px">Loading...</p>';
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
+    const data = await res.json();
+    if (data.raceids && data.raceids.length > 0 && allRaces.length > 0) {
+      const selected = allRaces.filter(r => data.raceids.includes(r.race_id));
+      if (selected.length > 0) {
+        container.innerHTML = '<p style="font-size:13px;font-weight:600;margin-bottom:8px">Currently selected:</p>' +
+          selected.map(r => `<div style="font-size:13px;padding:4px 0;color:var(--text-muted)">
+            ${cleanRaceTime(r.time)} ${r.course} — ${r.name||''}
+          </div>`).join('');
+        return;
+      }
+    }
+    container.innerHTML = '<p class="text-muted" style="font-size:13px">No races saved yet for this week.</p>';
+  } catch(e) {
+    container.innerHTML = '<p style="color:var(--red);font-size:13px">Could not load current selection.</p>';
+  }
+}
+
+async function resetWeekRaces() {
+  if (!confirm('Reset this week\'s race selection? You will be taken to the course picker again.')) return;
+
+  try {
+    const params = new URLSearchParams({
+      action: 'saveweekraces',
+      week: weekNumber,
+      raceids: '' // empty = cleared
+    });
+    await fetch(`${SCRIPT_URL}?${params.toString()}`);
+
+    // Reload the Pick tab to trigger the filter flow
+    document.getElementById('step-player').style.display = 'none';
+    document.getElementById('step-races').style.display = 'none';
+    document.getElementById('step-filter').style.display = 'none';
+    document.getElementById('step-pin').style.display = 'none';
+
+    showCourseFilter();
+    showPage('picks');
+    // Manually set the active nav button since showPage relies on event.target
+    document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+    document.querySelector('nav button').classList.add('active');
+  } catch(e) {
+    alert('Could not reset races. Please try again.');
+  }
+}
+
+// =============================================
+// LOAD RACES
+// =============================================
+var ADMIN_PIN = '1966';  // Change this to whatever PIN you want
+
+function showCourseFilter() {
+  // Show PIN gate first
+  document.getElementById('step-pin').style.display = 'block';
+  setTimeout(function() {
+    var el = document.getElementById('admin-pin');
+    if (el) el.focus();
+  }, 100);
+}
+
+function checkPin() {
+  var entered = document.getElementById('admin-pin').value;
+  if (entered === ADMIN_PIN) {
+    document.getElementById('step-pin').style.display = 'none';
+    document.getElementById('step-filter').style.display = 'block';
+    renderCourseStep();
+  } else {
+    document.getElementById('pin-error').style.display = 'block';
+    document.getElementById('admin-pin').value = '';
+  }
+}
+
+function renderCourseStep() {
+  const courses = [...new Set(allRaces.map(r => r.course))].sort();
+  const container = document.getElementById('course-checkboxes');
+  document.querySelector('#step-filter .card-header').textContent = 'Step 1: Which courses are on ITV today?';
+  document.querySelector('#step-filter .btn').textContent = 'Next: Pick races →';
+  document.querySelector('#step-filter .btn').onclick = () => renderRaceStep();
+  container.innerHTML = courses.map(c => `
+    <label style="display:flex;align-items:center;gap:6px;padding:8px 12px;
+      border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
+      background:#fff;font-size:14px;font-weight:500;white-space:nowrap">
+      <input type="checkbox" value="${c}" style="width:16px;height:16px;accent-color:var(--green)">
+      ${c}
+    </label>`).join('');
+}
+
+function renderRaceStep() {
+  const checkedCourses = [...document.querySelectorAll('#course-checkboxes input:checked')].map(i => i.value);
+  if (checkedCourses.length === 0) { alert('Please select at least one course.'); return; }
+
+  const container = document.getElementById('course-checkboxes');
+  document.querySelector('#step-filter .card-header').textContent = 'Step 2: Which races are on ITV?';
+  document.querySelector('#step-filter .btn').textContent = 'Start picking →';
+  document.querySelector('#step-filter .btn').onclick = () => applyFilter();
+
+  // Show races grouped by course for the selected courses
+  const courseRaces = allRaces.filter(r => checkedCourses.includes(r.course));
+  const grouped = {};
+  courseRaces.forEach(r => {
+    if (!grouped[r.course]) grouped[r.course] = [];
+    grouped[r.course].push(r);
+  });
+
+  container.innerHTML = Object.entries(grouped).map(([course, cRaces]) => `
+    <div style="width:100%;margin-bottom:4px">
+      <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;
+        letter-spacing:0.5px;margin-bottom:6px;margin-top:8px">${course}</div>
+      ${cRaces.map(r => `
+        <label style="display:flex;align-items:center;gap:8px;padding:9px 12px;
+          border:1.5px solid var(--border);border-radius:8px;cursor:pointer;
+          background:#fff;font-size:14px;margin-bottom:6px;width:100%">
+          <input type="checkbox" value="${r.race_id}" style="width:16px;height:16px;accent-color:var(--green);flex-shrink:0">
+          <span><strong>${r.time}</strong> &nbsp;${r.name || ''}</span>
+        </label>`).join('')}
+    </div>`).join('');
+}
+
+async function applyFilter() {
+  const checked = [...document.querySelectorAll('#course-checkboxes input:checked')].map(i => i.value);
+  if (checked.length === 0) { alert('Please select at least one race.'); return; }
+
+  const selectedRaces = allRaces.filter(r => checked.includes(r.race_id));
+
+  // Save just the race IDs to Sheet (keeps URL short, avoids CORS size limit)
+  const btn = document.querySelector('#step-filter .btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    const params = new URLSearchParams({
+      action: 'saveweekraces',
+      week: weekNumber,
+      raceids: checked.join(',')
+    });
+    const res = await fetch(`${SCRIPT_URL}?${params.toString()}`);
+    const data = await res.json();
+    if (data.error) {
+      alert('Error saving races: ' + data.error);
+      btn.disabled = false;
+      btn.textContent = 'Start picking →';
+      return;
+    }
+  } catch(e) {
+    alert('Network error saving races. Please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Start picking →';
+    return;
+  }
+
+  races = selectedRaces;
+  document.getElementById('step-filter').style.display = 'none';
+  document.getElementById('step-player').style.display = 'block';
+  if (currentPlayer) selectPlayer(currentPlayer, true);
+}
+
+async function loadRaces() {
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getRaces`);
+    const data = await res.json();
+    document.getElementById('picks-loading').style.display = 'none';
+
+    if (data.error) {
+      showNotice('picks', data.error, 'error');
+      return;
+    }
+
+    allRaces = data.races || [];
+    if (allRaces.length === 0) {
+      showNotice('picks', 'No races found. Check back later!', 'warning');
+      return;
+    }
+
+    // Pre-cache runners
+    allRaces.forEach(race => {
+      if (race.runners && race.runners.length > 0) {
+        runners[race.race_id] = race.runners;
+      }
+    });
+
+    // Load any existing picks from localStorage
+    const saved = localStorage.getItem('racing_picks_' + weekNumber);
+    if (saved) {
+      picks = JSON.parse(saved);
+      submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
+    }
+
+    // Check Sheet for this week's admin-selected races
+    let weekData = {};
+    try {
+      const weekRes = await fetch(`${SCRIPT_URL}?action=getweekraces&week=${weekNumber}`);
+      weekData = await weekRes.json();
+    } catch(e) {
+      console.log('getweekraces failed:', e);
+    }
+
+    if (weekData.raceids && weekData.raceids.length > 0) {
+      // Admin has already set the race IDs — match against today's full race data
+      races = allRaces.filter(r => weekData.raceids.includes(r.race_id));
+      if (races.length === 0) races = allRaces; // fallback
+      document.getElementById('step-player').style.display = 'block';
+      if (currentPlayer) selectPlayer(currentPlayer, true);
+    } else {
+      // No races set yet for this week
+      // Only show course filter on a Saturday (day 6) or if there are UK races
+      const today = new Date();
+      const isSaturday = today.getDay() === 6;
+      if (isSaturday) {
+        showCourseFilter();
+      } else {
+        showNotice('picks', '🏇 No ITV races selected yet for this week. Come back on Saturday when Ged sets the races!', 'warning');
+      }
+    }
+  } catch(e) {
+    document.getElementById('picks-loading').innerHTML =
+      '<span style="color:var(--red)">⚠ Could not load races. Check your connection.</span>';
+  }
+}
+
+// =============================================
+// PLAYER SELECTION
+// =============================================
+async function selectPlayer(name, silent) {
+  currentPlayer = name;
+  localStorage.setItem('racing_player', name);
+
+  document.querySelectorAll('.player-btn').forEach(b => {
+    b.classList.toggle('selected', b.textContent.replace('✓','').trim() === name);
+  });
+
+  document.getElementById('step-player').style.display = 'none';
+  document.getElementById('step-races').style.display = 'block';
+  document.getElementById('picking-as').textContent = 'Picking as: ' + name;
+
+  // Fetch this week's picks from Sheet, but only keep ones matching TODAY's races
+  // (the week number can span multiple race days due to ISO week boundaries)
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
+    const data = await res.json();
+    const todayRaceIds = races.map(r => r.race_id);
+    const sheetPicks = (data.picks || []).filter(p =>
+      p.player === name && todayRaceIds.includes(p.race_id)
+    );
+    if (sheetPicks.length > 0) {
+      if (!picks[name]) picks[name] = {};
+      if (!submittedPicks[name]) submittedPicks[name] = {};
+      sheetPicks.forEach(p => {
+        const horse = p.horse || '';
+        if (horse) {
+          picks[name][p.race_id] = horse;
+          submittedPicks[name][p.race_id] = true;
+        }
+      });
+      localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+      localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+    }
+  } catch(e) {
+    // If fetch fails, fall back to whatever's in localStorage
+    console.log('Could not fetch picks from sheet:', e);
+  }
+
+  renderRaceTabs();
+  showRace(0);
+  renderPicksSummary();
+}
+
+function clearPlayer() {
+  currentPlayer = null;
+  localStorage.removeItem('racing_player');
+  document.querySelectorAll('.player-btn').forEach(b => b.classList.remove('selected'));
+  document.getElementById('step-player').style.display = 'block';
+  document.getElementById('step-races').style.display = 'none';
+}
+
+// =============================================
+// RACE TABS
+// =============================================
+function renderRaceTabs() {
+  const container = document.getElementById('race-tabs-container');
+  container.innerHTML = '';
+  races.forEach((race, i) => {
+    const hasPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
+    const tab = document.createElement('button');
+    tab.className = 'race-tab' + (i === currentRaceIdx ? ' active' : '') + (hasPick ? ' done' : '');
+    const t = formatTime(race.time);
+    tab.textContent = t + ' ' + race.course;
+    tab.onclick = () => { currentRaceIdx = i; renderRaceTabs(); showRace(i); };
+    container.appendChild(tab);
+  });
+}
+
+// =============================================
+// SHOW RACE
+// =============================================
+async function showRace(idx) {
+  currentRaceIdx = idx;
+  const race = races[idx];
+  const panel = document.getElementById('race-pick-panel');
+  panel.innerHTML = `
+    <div class="text-muted" style="margin-bottom:10px;font-size:13px">
+      ${race.name || ''} &nbsp;·&nbsp; ${race.distance || ''} &nbsp;·&nbsp; ${race.going || ''}
+    </div>`;
+
+  const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
+  const submitted = submittedPicks[currentPlayer] && submittedPicks[currentPlayer][race.race_id];
+
+  if (submitted) {
+    panel.innerHTML += `<div class="pick-status picked">✓ Submitted: <strong>${myPick}</strong></div>`;
+    // Show detail card for the submitted horse
+    const raceRunners = runners[race.race_id] || [];
+    const h = raceRunners.find(r => r.name === myPick);
+    if (h) {
+      const colourMap = {'b':'Bay','br':'Brown','ch':'Chestnut','gr':'Grey','bl':'Black','ro':'Roan','wh':'White'};
+      const colour = colourMap[(h.colour||'').toLowerCase()] || h.colour || '';
+      const tags = [
+        h.age ? h.age + 'yo' : '', colour,
+        h.draw ? 'Draw ' + h.draw : '', h.ofr ? 'OR ' + h.ofr : '',
+        h.lbs ? h.lbs + 'lbs' : '', h.last_run ? h.last_run + 'd ago' : ''
+      ].filter(Boolean).join(' · ');
+      panel.innerHTML += `<div style="background:var(--green-light);border-radius:8px;padding:10px 12px;
+        margin-top:8px;font-size:13px;line-height:1.8">
+        <div style="font-weight:600;font-size:15px;margin-bottom:4px">${h.name}</div>
+        <div style="color:var(--text-muted)">${h.jockey || ''}${h.trainer ? ' · ' + h.trainer : ''}</div>
+        ${tags ? `<div style="color:var(--text-muted);margin-top:2px">${tags}</div>` : ''}
+        ${h.form ? `<div style="font-weight:500;letter-spacing:1px;color:var(--green-mid);margin-top:4px">${h.form}</div>` : ''}
+      </div>`;
+    }
+    return;
+  }
+  if (myPick) {
+    panel.innerHTML += `<div class="pick-status picked">Your pick: <strong>${myPick}</strong> — tap another horse to change</div>`;
+  }
+
+  // Load runners if not cached
+  if (!runners[race.race_id]) {
+    panel.innerHTML += '<p class="text-muted mt-8">Loading runners...</p>';
+    try {
+      const res = await fetch(`${SCRIPT_URL}?action=getRunners&race_id=${encodeURIComponent(race.race_id)}`);
+      const data = await res.json();
+      if (data.error) {
+        const isPlanError = (data.error||'').toLowerCase().includes('basic plan');
+        panel.innerHTML += isPlanError
+          ? `<div class="notice error" style="margin-top:8px">⚠ Runners need a Racing API Basic plan (~£10/mo at theracingapi.com). Type your horse name below instead.</div>`
+          : `<p style="color:var(--red)">${data.error}</p>`;
+        if (isPlanError) renderManualEntry(race);
+        return;
+      }
+      runners[race.race_id] = data.runners || [];
+    } catch(e) {
+      panel.innerHTML += '<p style="color:var(--red)">Could not load runners.</p>';
+      return;
+    }
+  }
+
+  renderRunnerPicker(race, submitted);
+}
+
+function renderRunnerPicker(race, submitted, sortMode) {
+  const panel = document.getElementById('race-pick-panel');
+  const raceRunners = runners[race.race_id] || [];
+  const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
+
+  const colourMap = {
+    'b':'Bay','br':'Brown','ch':'Chestnut','gr':'Grey','bl':'Black',
+    'ro':'Roan','wh':'White','b/br':'Bay/Brown','gr/ro':'Grey/Roan'
+  };
+
+  // Remove old picker if present
+  const old = panel.querySelector('.runner-picker');
+  if (old) old.remove();
+
+  if (submitted) return;
+
+  const picker = document.createElement('div');
+  picker.className = 'runner-picker';
+
+  let active = raceRunners.filter(r => !r.is_nr);
+  const nrs = raceRunners.filter(r => r.is_nr);
+
+  // Sort mode: 'number' (cloth, default), 'or' (official rating desc), 'form' (recent form)
+  sortMode = sortMode || race._sortMode || 'score';
+  race._sortMode = sortMode;
+
+  // Pre-compute scores for all runners (needed for sort and display)
+  const fieldSize = active.length;
+  const scores = {};
+  active.forEach(r => {
+    scores[r.name] = scoreRunner(r, fieldSize, race.course, active);
+  });
+  const maxScore = Math.max(...Object.values(scores).map(s => s.total), 1);
+
+  if (sortMode === 'score') {
+    active = [...active].sort((a, b) => scores[b.name].total - scores[a.name].total);
+  } else if (sortMode === 'or') {
+    active = [...active].sort((a, b) => {
+      const oa = parseInt(a.ofr) || 0, ob = parseInt(b.ofr) || 0;
+      return ob - oa;
+    });
+  } else if (sortMode === 'form') {
+    active = [...active].sort((a, b) => {
+      const fa = parseInt((a.form||'').replace(/[^0-9]/g,'')[0]) || 9;
+      const fb = parseInt((b.form||'').replace(/[^0-9]/g,'')[0]) || 9;
+      return fa - fb;
+    });
+  } else {
+    active = [...active].sort((a,b) => (parseInt(a.number)||99)-(parseInt(b.number)||99));
+  }
+
+  // Find top OR horse as "top rated" indicator
+  const topOR = Math.max(...active.map(r => parseInt(r.ofr)||0));
+
+  // Sort toggle
+  let html = `<div style="display:flex;gap:6px;margin-bottom:10px;margin-top:4px">
+    <span style="font-size:12px;color:var(--text-muted);align-self:center;margin-right:4px">Sort:</span>
+    ${['score','number','or','form'].map(m => `
+      <button onclick="renderRunnerPicker(races.find(r=>r.race_id==='${race.race_id}'), false, '${m}')"
+        style="padding:4px 10px;border-radius:12px;border:1.5px solid ${sortMode===m?'var(--green)':'var(--border)'};
+        background:${sortMode===m?'var(--green)':'#fff'};color:${sortMode===m?'#fff':'var(--text-muted)'};
+        font-size:12px;font-weight:500;cursor:pointer">
+        ${{score:'⚡ Score',number:'No.',or:'Rating',form:'Form'}[m]}
+      </button>`).join('')}
+  </div><div>`;
+
+  active.forEach(r => {
+    const selected = myPick === r.name;
+    const colour = colourMap[(r.colour||'').toLowerCase()] || r.colour || '';
+    const orVal = parseInt(r.ofr) || 0;
+    const isTopRated = orVal > 0 && orVal === topOR;
+    const runnerScore = scores[r.name] || { total: 0, max: 52, breakdown: [] };
+    const scorePct = Math.round((runnerScore.total / maxScore) * 100);
+    const scoreRank = active.indexOf(r) + 1;
+    const isTopScore = scoreRank === 1 && sortMode === 'score';
+    const tags = [
+      r.age ? r.age + 'yo' : '',
+      colour,
+      r.draw ? 'Draw ' + r.draw : '',
+      r.ofr  ? 'OR ' + r.ofr : '',
+      r.lbs  ? r.lbs + 'lbs' : '',
+      r.last_run ? r.last_run + 'd ago' : ''
+    ].filter(Boolean).join(' · ');
+
+    html += `
+      <div onclick="selectRunnerCard('${race.race_id}', '${r.name.replace(/'/g,"\\'")}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}', this)"
+        style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:6px;
+          border:2px solid ${selected ? 'var(--green)' : 'var(--border)'};
+          background:${selected ? 'var(--green-light)' : '#fff'};
+          border-radius:10px;cursor:pointer;transition:all 0.15s"
+        data-horse="${r.name}">
+        <div style="min-width:26px;height:26px;border-radius:50%;
+          background:${selected ? 'var(--green)' : 'var(--gray-light)'};
+          color:${selected ? '#fff' : 'var(--gray)'};
+          display:flex;align-items:center;justify-content:center;
+          font-weight:700;font-size:13px;flex-shrink:0">
+          ${r.number || '?'}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px;margin-bottom:2px;
+            color:${selected ? 'var(--green)' : 'var(--text)'}">
+            ${r.name}
+            ${isTopRated ? '<span style="font-size:10px;background:var(--amber);color:#fff;padding:1px 5px;border-radius:8px;font-weight:600;margin-left:6px">TOP RATED</span>' : ''}
+            ${selected ? '<span style="float:right;color:var(--green)">✓</span>' : ''}
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">
+            ${r.jockey || ''}${r.trainer ? ' · ' + r.trainer : ''}
+          </div>
+          ${tags ? `<div style="font-size:12px;color:var(--text-muted)">${tags}</div>` : ''}
+          ${r.form || r.ofr ? `<div style="display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap">
+            ${r.form ? `<span style="font-size:13px;font-weight:500;letter-spacing:1px;color:var(--green-mid)">${r.form}</span>` : ''}
+            ${parseInt(r.ofr) > 0 ? `<span style="font-size:11px;background:var(--gray-light);padding:1px 6px;border-radius:8px;color:var(--gray)">OR ${r.ofr}</span>` : ''}
+          </div>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+            <div style="height:4px;flex:1;background:var(--gray-light);border-radius:2px;overflow:hidden">
+              <div style="width:${scorePct}%;height:100%;border-radius:2px;
+                background:${scoreRank===1?'var(--amber)':scoreRank<=3?'var(--green)':'var(--border)'}">
+              </div>
+            </div>
+            <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;flex-shrink:0">
+              ${runnerScore.total.toFixed(0)}/${runnerScore.max}
+              ${isTopScore ? ' ⭐' : ''}
+            </span>
+            ${runnerScore.bestOdds ? '<span style="font-size:11px;background:var(--amber-light);color:var(--amber);padding:1px 6px;border-radius:8px;font-weight:600;flex-shrink:0">' + runnerScore.bestOdds + '</span>' : ''}
+            <button onclick="event.stopPropagation();toggleBreakdown('bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}', this)"
+              style="font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);
+              border-radius:6px;padding:1px 6px;cursor:pointer;flex-shrink:0">
+              detail
+            </button>
+          </div>
+          <div id="bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}"
+            style="display:none;margin-top:8px;padding:8px;background:var(--gray-light);
+            border-radius:8px;font-size:12px">
+            ${runnerScore.breakdown.map(b => {
+              if (b.score === null) {
+                // Informational row (e.g. Best odds) — no bar
+                return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
+                  '<span style="min-width:90px;color:var(--text-muted)">' + b.label + '</span>' +
+                  '<span style="flex:1;font-size:12px;font-weight:600;color:var(--amber)">' + b.detail + '</span>' +
+                '</div>';
+              }
+              const pct = Math.round((b.score/b.max)*100);
+              const barColor = b.score>=b.max*0.7?'var(--green)':b.score>=b.max*0.4?'var(--amber)':'var(--red)';
+              return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">' +
+                '<span style="min-width:90px;color:var(--text-muted)">' + b.label + '</span>' +
+                '<div style="flex:1;height:3px;background:#ddd;border-radius:2px;overflow:hidden">' +
+                  '<div style="width:' + pct + '%;height:100%;background:' + barColor + ';border-radius:2px"></div>' +
+                '</div>' +
+                '<span style="min-width:28px;text-align:right;font-weight:600">' + b.score + '/' + b.max + '</span>' +
+                '<span style="color:var(--text-muted);min-width:0;font-size:11px">' + b.detail + '</span>' +
+              '</div>';
+            }).join('')}
+            <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:4px;
+              display:flex;justify-content:space-between;font-weight:600;font-size:12px">
+              <span>Total score</span>
+              <span style="color:var(--green)">${runnerScore.total.toFixed(1)} / ${runnerScore.max}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  if (nrs.length > 0) {
+    html += `<div style="font-size:12px;color:var(--text-muted);margin-top:8px;padding:6px 10px;
+      background:var(--gray-light);border-radius:6px">
+      <strong>Non-runners:</strong> ${nrs.map(r => r.name).join(', ')}
+    </div>`;
+  }
+
+  html += '</div>';
+
+  if (myPick && !submitted) {
+    html += `<button class="btn btn-green btn-full mt-12"
+      onclick="submitFromSummary('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
+      Submit ${myPick} ✓
+    </button>`;
+  }
+
+  picker.innerHTML = html;
+  panel.appendChild(picker);
+}
+
+function selectRunnerCard(raceId, horseName, course, time, raceName, el) {
+  // Update picks state
+  if (!picks[currentPlayer]) picks[currentPlayer] = {};
+  picks[currentPlayer][raceId] = horseName;
+  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+
+  // Re-render the picker to show selection
+  const race = races.find(r => r.race_id === raceId);
+  if (race) {
+    renderRunnerPicker(race, false);
+    renderRaceTabs();
+    renderPicksSummary();
+  }
+}
+
+
+function changePick(raceId) {
+  const race = races.find(r => r.race_id === raceId);
+  if (race) { renderRunnerPicker(race, false); }
+}
+
+function savePick(raceId, course, time, name) {
+  const sel = document.getElementById('horse-select-' + raceId);
+  if (!sel || !sel.value) return;
+  if (!picks[currentPlayer]) picks[currentPlayer] = {};
+  picks[currentPlayer][raceId] = sel.value;
+  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  renderRaceTabs();
+  showRace(currentRaceIdx);
+  renderPicksSummary();
+}
+
+async function submitPick(raceId, course, time, name) {
+  const sel = document.getElementById('horse-select-' + raceId);
+  const horse = (sel && sel.value) || (picks[currentPlayer] && picks[currentPlayer][raceId]);
+  if (!horse) return;
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting...';
+
+  try {
+    const params = new URLSearchParams({
+      action: 'submitpick',
+      week: weekNumber,
+      player: currentPlayer,
+      race_id: raceId,
+      course: course,
+      race_time: time,
+      race_name: name,
+      horse_name: horse
+    });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
+    const data = await res.json();
+    if (data.error) {
+      alert(data.error);
+      btn.disabled = false;
+      btn.textContent = originalText || 'Submit ✓';
+      return;
+    }
+    
+    // NEW: Log all runners for this race to ScoreLog
+    if (runners[raceId] && runners[raceId].length > 0) {
+      const runnerParams = new URLSearchParams({
+        action: 'logracerunners',
+        week: weekNumber,
+        race_id: raceId,
+        course: course,
+        race_time: time,
+        race_name: name,
+        runners: JSON.stringify(runners[raceId])
+      });
+      fetch(SCRIPT_URL + '?' + runnerParams.toString())
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            console.log('Logged ' + d.logged + ' runners for ' + course + ' ' + time);
+          } else if (d.error) {
+            console.log('Warning: Could not log runners - ' + d.error);
+          }
+        })
+        .catch(e => console.log('Error logging runners:', e));
+    }
+    
+    if (!picks[currentPlayer]) picks[currentPlayer] = {};
+    picks[currentPlayer][raceId] = horse;
+    if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
+    submittedPicks[currentPlayer][raceId] = true;
+    localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+    localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+    renderRaceTabs();
+    showRace(currentRaceIdx);
+    renderPicksSummary();
+  } catch(e) {
+    alert('Network error — please try again.');
+    btn.disabled = false;
+    btn.textContent = 'Submit ✓';
+  }
+}
+
+// =============================================
+// PICKS SUMMARY
+// =============================================
+function renderPicksSummary() {
+  const el = document.getElementById('all-picks-summary');
+  if (!currentPlayer) { el.innerHTML = ''; return; }
+
+  const playerPicks = picks[currentPlayer] || {};
+  const totalRaces = races.length;
+  const done = Object.keys(playerPicks).length;
+
+  let html = `<p style="font-size:13px;font-weight:600;margin-bottom:10px">
+    Your picks (${done}/${totalRaces} races)</p>`;
+
+  if (done === 0) {
+    html += '<p class="text-muted">No picks yet — select a race above.</p>';
+  } else {
+    html += '<table class="picks-table"><thead><tr><th>Race</th><th>Your pick</th><th></th></tr></thead><tbody>';
+    races.forEach(race => {
+      const horse = playerPicks[race.race_id];
+      const submitted = submittedPicks[currentPlayer] && submittedPicks[currentPlayer][race.race_id];
+      if (horse) {
+        html += `<tr>
+          <td>${formatTime(race.time)} ${race.course}</td>
+          <td><strong>${horse}</strong></td>
+          <td>${submitted
+            ? '<span style="color:var(--green);font-size:12px">✓ sent</span>'
+            : `<button class="btn btn-green" style="font-size:12px;padding:4px 10px"
+                onclick="submitFromSummary('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
+                Submit</button>`}</td>
+        </tr>`;
+      }
+    });
+    html += '</tbody></table>';
+
+    // Submit all button (only unsent picks)
+    const unsent = races.filter(r => playerPicks[r.race_id] &&
+      !(submittedPicks[currentPlayer] && submittedPicks[currentPlayer][r.race_id]));
+    if (unsent.length > 0) {
+      html += `<button class="btn btn-green btn-full mt-12"
+        onclick="submitAll()">Submit all ${unsent.length} remaining picks</button>`;
+    }
+  }
+
+  el.innerHTML = html;
+}
+
+async function submitFromSummary(raceId, course, time, name) {
+  const horse = picks[currentPlayer] && picks[currentPlayer][raceId];
+  if (!horse) return;
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  await submitPickDirect(raceId, course, time, name, horse);
+  renderPicksSummary(); // re-renders the whole table including this button
+}
+
+async function submitPickDirect(raceId, course, time, name, horse) {
+  try {
+    const params = new URLSearchParams({
+      action: 'submitpick',
+      week: weekNumber,
+      player: currentPlayer,
+      race_id: raceId,
+      course: course,
+      race_time: time,
+      race_name: name,
+      horse_name: horse
+    });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
+    const data = await res.json();
+    if (!data.error) {
+      if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
+      submittedPicks[currentPlayer][raceId] = true;
+      localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+    }
+  } catch(e) {}
+}
+
+async function submitAll() {
+  const playerPicks = picks[currentPlayer] || {};
+  const unsent = races.filter(r => playerPicks[r.race_id] &&
+    !(submittedPicks[currentPlayer] && submittedPicks[currentPlayer][r.race_id]));
+
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+
+  for (let i = 0; i < unsent.length; i++) {
+    const race = unsent[i];
+    btn.innerHTML = `<span class="spinner"></span> Submitting ${i+1} of ${unsent.length}...`;
+    await submitPickDirect(race.race_id, race.course, formatTime(race.time),
+      race.name || '', playerPicks[race.race_id]);
+  }
+  renderRaceTabs();
+  renderPicksSummary();
+  showRace(currentRaceIdx);
+}
+
+// =============================================
+// RESULTS
+// =============================================
+async function loadResults() {
+  document.getElementById('results-loading').style.display = 'block';
+  try {
+    // Get all picks for this week across all players
+    const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
+    const picksData = await picksRes.json();
+    // Fetch actual top 3 finishers for all races this week
+    try {
+      const t3Res = await fetch(`${SCRIPT_URL}?action=gettop3&week=${weekNumber}`);
+      const t3Data = await t3Res.json();
+      if (t3Data.top3ByRace) {
+        Object.assign(raceResults, t3Data.top3ByRace);
+      }
+    } catch(e) { console.log('top3 fetch failed:', e); }
+
+    // Only filter to today's races if we have a race list loaded
+    // (on non-Saturday or if admin hasn't set races, races may be empty)
+    const todayRaceIds = races.map(r => r.race_id);
+    const allPicks = todayRaceIds.length > 0
+      ? (picksData.picks || []).filter(p => todayRaceIds.includes(p.race_id))
+      : (picksData.picks || []);
+
+    if (allPicks.length === 0) {
+      document.getElementById('results-content').innerHTML =
+        '<p class="text-muted" style="text-align:center;padding:30px 0">No picks submitted yet this week.</p>';
+      document.getElementById('results-loading').style.display = 'none';
+      return;
+    }
+
+    // Group picks by race
+    const byRace = {};
+    allPicks.forEach(p => {
+      if (!byRace[p.race_id]) byRace[p.race_id] = { course: p.course, time: p.race_time, name: p.race_name, picks: [] };
+      byRace[p.race_id].picks.push(p);
+    });
+
+    // Sort races by time
+    const sortedRaces = Object.entries(byRace).sort((a, b) => {
+      const ta = cleanRaceTime(a[1].time), tb = cleanRaceTime(b[1].time);
+      return ta.localeCompare(tb);
+    });
+
+    let html = '';
+    for (const [raceId, raceData] of sortedRaces) {
+      const hasResults = raceData.picks.some(p => p.finish !== '' && p.finish !== undefined);
+      const weekPts = raceData.picks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
+
+      // Build 1-2-3 podium summary for card header
+      let podiumHtml = '';
+      if (hasResults) {
+        const medals = ['🥇','🥈','🥉'];
+        // Use cached actual results if available, otherwise derive from picks
+        let top3 = raceResults[raceId] || [];
+        if (top3.length === 0) {
+          // Derive from picks — get unique top 3 positions
+          const seen = new Set();
+          raceData.picks.slice()
+            .sort((a,b) => (parseInt(a.finish)||99)-(parseInt(b.finish)||99))
+            .forEach(p => {
+              const pos = parseInt(p.finish);
+              if (pos >= 1 && pos <= 3 && !seen.has(pos)) {
+                seen.add(pos);
+                top3.push({ position: pos, horse: p.horse, sp: p.sp || '' });
+              }
+            });
+        }
+
+        // Build set of picked horses for highlighting
+        const pickedHorses = new Set(raceData.picks.map(p => (p.horse||'').toLowerCase()));
+
+        if (top3.length > 0) {
+          podiumHtml = '<div style="margin-top:5px;display:flex;flex-direction:column;gap:2px">' +
+            top3.map(h => {
+              const isPicked = pickedHorses.has((h.horse||'').toLowerCase());
+              const pickers = isPicked ? raceData.picks
+                .filter(p => (p.horse||'').toLowerCase() === (h.horse||'').toLowerCase())
+                .map(p => p.player).join(', ') : '';
+              return '<div style="font-size:11px;display:flex;align-items:center;gap:5px">' +
+                medals[h.position - 1] + ' ' +
+                '<span style="font-weight:' + (isPicked ? '700' : '400') + ';' +
+                (isPicked ? 'color:#fff' : 'opacity:0.85') + '">' + h.horse + '</span>' +
+                // SP not available on free tier
+                (isPicked ? '<span style="font-size:10px;background:rgba(255,255,255,0.25);' +
+                  'padding:1px 5px;border-radius:8px">' + pickers + '</span>' : '') +
+              '</div>';
+            }).join('') + '</div>';
+        }
+      }
+
+      const cardHeaderContent =
+        '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="font-weight:600">' + raceData.course + '</span>' +
+            '<span class="time">' + cleanRaceTime(raceData.time) + '</span>' +
+          '</div>' +
+          (raceData.name ? '<div style="font-size:11px;opacity:0.8;font-weight:400;margin-top:1px">' + raceData.name + '</div>' : '') +
+          podiumHtml +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:10px">' +
+          (hasResults
+            ? '<span style="font-size:12px;opacity:0.85">' + weekPts + ' pts total</span>'
+            : '<button class="btn btn-amber" style="font-size:12px;padding:5px 11px" data-fetchid="' + raceId + '"' +
+              ' onclick="event.stopPropagation();fetchRaceResults(this.dataset.fetchid,' + weekNumber + ',this)">Fetch results</button>') +
+          '<span class="toggle-arrow" style="font-size:16px;transition:transform 0.2s">›</span>' +
+        '</div>';
+
+      html += '<div class="card" style="margin-bottom:10px">';
+      html += '<div class="card-header" style="cursor:pointer;user-select:none" data-raceid="' + raceId + '"' +
+        ' onclick="handleRaceCardClick(this)">' + cardHeaderContent + '</div>';
+      html += '<div id="rd_' + raceId + '" style="display:none">';
+
+      if (hasResults) {
+        // Sort picks by finish position
+        const sorted = [...raceData.picks].sort((a,b) => {
+          const pa = parseInt(a.finish)||99, pb = parseInt(b.finish)||99;
+          return pa - pb;
+        });
+        const medals = ['🥇','🥈','🥉'];
+        sorted.forEach(p => {
+          const pts = parseInt(p.points) || 0;
+          const finish = p.finish || 'NP';
+          const isPlaced = pts > 0;
+          html += `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+            border-bottom:1px solid var(--border);
+            background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+            <div style="width:32px;text-align:center;font-size:15px;flex-shrink:0">
+              ${medals[parseInt(finish)-1] || `<span style="color:var(--text-muted);font-size:13px">${finish}</span>`}
+            </div>
+            <div style="flex:1">
+              <div style="font-weight:600;font-size:14px">${p.horse}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${p.player}</div>
+            </div>
+            <span class="points-badge pts-${Math.min(pts,3)}">${pts} pt${pts!==1?'s':''}</span>
+          </div>`;
+        });
+      } else {
+        raceData.picks.forEach(p => {
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;
+            padding:10px 14px;border-bottom:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:14px">${p.horse}</div>
+              <div style="font-size:12px;color:var(--text-muted)">${p.player}</div>
+            </div>
+            <span style="font-size:12px;color:var(--text-muted)">Pending</span>
+          </div>`;
+        });
+      }
+
+      html += `</div></div></div>`;
+    }
+
+    document.getElementById('results-content').innerHTML = html;
+  } catch(e) {
+    document.getElementById('results-content').innerHTML =
+      '<p style="color:var(--red)">Could not load results.</p>';
+  }
+  document.getElementById('results-loading').style.display = 'none';
+}
+
+async function fetchRaceResults(raceId, week, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching...';
+  try {
+    const params = new URLSearchParams({ action: 'fetchresults', race_id: raceId, week: week });
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
+    const data = await res.json();
+    if (data.error) {
+      btn.disabled = false;
+      btn.textContent = 'Fetch results';
+      alert(data.error);
+      return;
+    }
+    // Cache actual top 3 finishers for podium display
+    if (data.top3 && data.top3.length > 0) {
+      raceResults[raceId] = data.top3;
+    }
+
+    // Save score log for all runners in this race
+    try {
+      const race = races.find(r => r.race_id === raceId);
+      
+      // CRITICAL FIX: Ensure runners are loaded before scoring
+      // If not already in memory, fetch them now
+      let raceRunners = runners[raceId] || [];
+      if (raceRunners.length === 0) {
+        const runnersRes = await fetch(SCRIPT_URL + '?action=getrunners&race_id=' + encodeURIComponent(raceId));
+        const runnersData = await runnersRes.json();
+        if (runnersData.runners && runnersData.runners.length > 0) {
+          raceRunners = runnersData.runners;
+          runners[raceId] = raceRunners; // cache for future use
+        }
+      }
+      
+      if (race && raceRunners.length > 0) {
+        const fieldSize = raceRunners.filter(r => !r.is_nr).length;
+        const active = raceRunners.filter(r => !r.is_nr);
+        const winner = data.top3 && data.top3[0] ? data.top3[0].horse : '';
+
+        // Send one row per runner to avoid URL length limits
+        active.forEach(function(r) {
+          const s = scoreRunner(r, fieldSize, race.course, active);
+          const get = (label) => {
+            const b = s.breakdown.find(x => x.label === label);
+            return b && b.score !== null ? b.score : 0;
+          };
+          const logParams = new URLSearchParams({
+            action: 'savescorelog',
+            week: weekNumber,
+            course: race.course,
+            race_time: race.time,
+            race_name: race.name || '',
+            winner: winner,
+            horse: r.name,
+            jockey: r.jockey || '',
+            trainer: r.trainer || '',
+            score: s.total,
+            max: s.max,
+            f_form: get('Recent form'),
+            f_fresh: get('Freshness'),
+            f_or: get('Official Rating'),
+            f_draw: get('Draw'),
+            f_weight: get('Weight'),
+            f_trainer: get('Trainer'),
+            f_jockey: get('Jockey'),
+            f_cd: get('C&D Winner')
+          });
+          fetch(SCRIPT_URL + '?' + logParams.toString())
+            .catch(e => console.log('Score log failed:', e));
+        });
+      }
+    } catch(e) { console.log('Score log error:', e); }
+
+    loadResults();
+    loadLeaderboard();
+  } catch(e) {
+    btn.disabled = false;
+    btn.textContent = 'Fetch results';
+    alert('Network error');
+  }
+}
+
+// =============================================
+// LEADERBOARD
+// =============================================
+async function loadLeaderboard() {
+  document.getElementById('leaderboard-loading').style.display = 'block';
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getseason`);
+    const data = await res.json();
+    const standings = data.standings || [];
+
+    const weeks = data.weeks || [];
+    const maxPts = Math.max(...standings.map(s => s.total), 1);
+
+    let html = '<div class="card"><div class="card-header">2026 Season standings</div><div class="card-body" style="padding:0">';
+    if (standings.length === 0) {
+      html += '<p class="text-muted" style="padding:14px">No results recorded yet.</p>';
+    } else {
+      standings.forEach((s, i) => {
+        const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
+        const barPct = Math.round((s.total / maxPts) * 100);
+        const bestWk = Math.max(...(s.weekly||[{pts:0}]).map(w => w.pts));
+        const scoringWks = (s.weekly||[]).filter(w => w.pts > 0).length;
+        const winsStr = s.wins > 0
+          ? '<div style="font-size:11px;color:var(--amber);font-weight:600;margin-top:2px">\uD83C\uDFC6 ' +
+            (s.wins % 1 === 0 ? s.wins : s.wins.toFixed(1)) + ' ' + (s.wins === 1 ? 'win' : 'wins') + '</div>'
+          : '';
+
+        const weekTiles = (s.weekly||[]).map(w => {
+          const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
+          return '<div onclick="showWeekDetail(\'' + s.player + '\', ' + w.week + ', this)"' +
+            ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
+            'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
+            ' data-player="' + s.player + '" data-week="' + w.week + '">' +
+            '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
+            '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
+            '<div style="font-size:10px;color:var(--text-muted)">pts</div>' +
+            '</div>';
+        }).join('');
+
+        html +=
+          '<div style="border-bottom:1px solid var(--border)">' +
+            '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none"' +
+              ' onclick="toggleSeasonDetail(\'sd_' + s.player + '\', this)">' +
+              '<div class="lb-rank ' + rankClass + '" style="flex-shrink:0">' + (i+1) + '</div>' +
+              '<div style="flex:1">' +
+                '<div style="font-weight:600;font-size:15px">' + s.player + '</div>' +
+                '<div style="margin-top:4px;height:4px;background:var(--gray-light);border-radius:2px;overflow:hidden">' +
+                  '<div style="width:' + barPct + '%;height:100%;background:var(--green);border-radius:2px;transition:width 0.4s"></div>' +
+                '</div>' +
+              '</div>' +
+              '<div style="text-align:right;flex-shrink:0">' +
+                '<div style="font-size:22px;font-weight:700;color:var(--green)">' + s.total + '</div>' +
+                '<div style="font-size:11px;color:var(--text-muted)">pts</div>' +
+                winsStr +
+              '</div>' +
+              '<span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">\u203a</span>' +
+            '</div>' +
+            '<div id="sd_' + s.player + '" style="display:none;background:var(--gray-light);padding:12px 14px">' +
+              '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Week by week</div>' +
+              '<div class="weekly-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));gap:6px">' +
+                '<span style="font-size:12px;color:var(--text-muted)">Tap to load...</span>' +
+              '</div>' +
+              '<div id="week-detail-' + s.player + '" style="display:none;margin-top:10px;background:#fff;border-radius:8px;border:1.5px solid var(--border)"></div>' +
+              '<div class="weekly-stats" style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:13px">' +
+                '<span style="color:var(--text-muted)">Best week: <strong>— pts</strong></span>' +
+                '<span style="color:var(--text-muted)">— scoring weeks</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+      });
+    }
+    html += '</div></div>';
+
+    // This week summary
+    const picksRes = await fetch(`${SCRIPT_URL}?action=getpicks&week=${weekNumber}`);
+    const picksData = await picksRes.json();
+    const todayRaceIds = races.map(r => r.race_id);
+    const allPicks = (picksData.picks || []).filter(p => todayRaceIds.includes(p.race_id));
+
+    window._thisWeekPicks = allPicks; // cache for drill-down
+
+    if (allPicks.length > 0) {
+      const weeklyTotals = {};
+      allPicks.forEach(p => {
+        if (!weeklyTotals[p.player]) weeklyTotals[p.player] = 0;
+        weeklyTotals[p.player] += parseInt(p.points) || 0;
+      });
+      const sorted = Object.entries(weeklyTotals).sort((a,b)=>b[1]-a[1]);
+      const maxW = Math.max(...Object.values(weeklyTotals), 1);
+
+      html += `<div class="card"><div class="card-header">This week — Week ${weekNumber}</div><div class="card-body" style="padding:0">`;
+      sorted.forEach(([player, pts], i) => {
+        const rankClass = i === 0 ? 'lb-rank-1' : i === 1 ? 'lb-rank-2' : i === 2 ? 'lb-rank-3' : 'lb-rank-n';
+        const barPct = Math.round((pts / maxW) * 100);
+        html += `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+              cursor:pointer;user-select:none" onclick="toggleThisWeekDetail('tw_${player}', this)">
+              <div class="lb-rank ${rankClass}" style="flex-shrink:0;width:24px;height:24px;font-size:12px">${i+1}</div>
+              <div style="flex:1">
+                <div style="font-weight:500;font-size:14px">${player}</div>
+                <div style="margin-top:3px;height:3px;background:var(--gray-light);border-radius:2px">
+                  <div style="width:${barPct}%;height:100%;background:var(--green);border-radius:2px"></div>
+                </div>
+              </div>
+              <span class="points-badge pts-${Math.min(pts,3)}">${pts} pts</span>
+              <span class="toggle-arrow" style="font-size:16px;color:var(--text-muted);transition:transform 0.2s">›</span>
+            </div>
+            <div id="tw_${player}" style="display:none;background:var(--gray-light)"></div>
+          </div>`;
+      });
+      html += '</div></div>';
+    }
+
+    document.getElementById('leaderboard-content').innerHTML = html;
+  } catch(e) {
+    document.getElementById('leaderboard-content').innerHTML =
+      '<p style="color:var(--red)">Could not load standings.</p>';
+  }
+  document.getElementById('leaderboard-loading').style.display = 'none';
+}
+
+// =============================================
+// UTILITIES
+// =============================================
+// Toggle this-week player drill-down (uses cached picks, no fetch needed)
+function toggleThisWeekDetail(id, header) {
+  const el = document.getElementById(id);
+  const arrow = header.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+
+  if (open) {
+    el.style.display = 'none';
+    if (arrow) arrow.style.transform = '';
+    return;
+  }
+
+  if (arrow) arrow.style.transform = 'rotate(90deg)';
+  el.style.display = 'block';
+
+  // Extract player name from id "tw_PlayerName"
+  const player = id.substring(3);
+  const allPicks = window._thisWeekPicks || [];
+  const weekPicks = allPicks.filter(p => p.player === player)
+    .sort((a, b) => (a.race_time||'').localeCompare(b.race_time||''));
+
+  if (weekPicks.length === 0) {
+    el.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">No picks found.</div>';
+    return;
+  }
+
+  const medals = ['🥇','🥈','🥉'];
+  let html = '';
+  weekPicks.forEach(p => {
+    const pts = parseInt(p.points) || 0;
+    const finish = String(p.finish || '—');
+    const finishNum = parseInt(finish);
+    const medal = (!isNaN(finishNum) && finishNum <= 3) ? medals[finishNum-1] : '';
+    const ordinal = !isNaN(finishNum) ? (finishNum===1?'st':finishNum===2?'nd':finishNum===3?'rd':'th') : '';
+    const isPlaced = pts > 0;
+
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
+      border-bottom:1px solid var(--border);
+      background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+      <div style="min-width:40px;font-size:12px;color:var(--text-muted);flex-shrink:0">
+        ${cleanRaceTime(p.race_time||'')}
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${p.horse}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+          ${p.course||''}
+        </div>
+      </div>
+      <div style="text-align:right;flex-shrink:0;min-width:60px">
+        <div style="font-size:12px;color:var(--text-muted)">
+          ${medal} ${finish !== '—' ? finish + ordinal : finish}
+        </div>
+        <span class="points-badge pts-${Math.min(pts,3)}" style="font-size:11px;padding:2px 7px">
+          ${pts}pt${pts!==1?'s':''}
+        </span>
+      </div>
+    </div>`;
+  });
+
+  el.innerHTML = html;
+}
+
+
+// Store full race results keyed by race_id for podium display
+const raceResults = {};
+
+function toggleBreakdown(id, btn) {
+  const el = document.getElementById(id);
+  if (!el) { console.log('Breakdown element not found:', id); return; }
+  const open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? 'detail' : 'hide';
+}
+
+function handleRaceCardClick(el) {
+  const raceId = el.dataset.raceid;
+  if (!raceId) return;
+  toggleRaceDetail('rd_' + raceId, el);
+}
+
+function toggleRaceDetail(id, header) {
+  const el = document.getElementById(id);
+  const arrow = header.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+  el.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+async function toggleSeasonDetail(id, row) {
+  const el = document.getElementById(id);
+  if (!el) { console.error('Season detail element not found:', id); return; }
+  const arrow = row.querySelector('.toggle-arrow');
+  const open = el.style.display === 'block';
+  if (open) {
+    el.style.display = 'none';
+    if (arrow) arrow.style.transform = '';
+    return;
+  }
+  el.style.display = 'block';
+  if (arrow) arrow.style.transform = 'rotate(90deg)';
+
+  // Fetch weekly breakdown on demand if not already loaded
+  const grid = el.querySelector('.weekly-grid');
+  if (grid && grid.dataset.loaded) return; // already loaded
+
+  const player = id.replace('sd_', '');
+  const gridEl = el.querySelector('.weekly-grid');
+  if (gridEl) gridEl.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Loading...</span>';
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getplayerweekly&player=' + encodeURIComponent(player));
+    const data = await res.json();
+    const weekly = data.weekly || [];
+    if (!gridEl) return;
+    gridEl.dataset.loaded = '1';
+    const bestWk = Math.max(...weekly.map(w => w.pts), 0);
+    const scoringWks = weekly.filter(w => w.pts > 0).length;
+
+    gridEl.innerHTML = weekly.map(w => {
+      const ptColor = w.pts >= 10 ? 'var(--green)' : w.pts > 0 ? 'var(--amber)' : 'var(--text-muted)';
+      return '<div onclick="showWeekDetail(\'' + player + '\', ' + w.week + ', this)"' +
+        ' style="background:#fff;border-radius:8px;padding:8px;text-align:center;' +
+        'border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s"' +
+        ' data-player="' + player + '" data-week="' + w.week + '">' +
+        '<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px">Wk ' + w.week + '</div>' +
+        '<div style="font-size:16px;font-weight:700;color:' + ptColor + '">' + w.pts + '</div>' +
+        '<div style="font-size:10px;color:var(--text-muted)">pts</div></div>';
+    }).join('');
+
+    // Update best week and scoring weeks
+    const statsEl = el.querySelector('.weekly-stats');
+    if (statsEl) statsEl.innerHTML =
+      '<span style="color:var(--text-muted)">Best week: <strong>' + bestWk + ' pts</strong></span>' +
+      '<span style="color:var(--text-muted)">' + scoringWks + ' scoring weeks</span>';
+  } catch(e) {
+    console.error('toggleSeasonDetail error:', e.message, e.stack);
+    if (gridEl) gridEl.innerHTML = '<span style="color:var(--red);font-size:12px">Could not load: ' + e.message + '</span>';
+  }
+}
+
+// Fix the 1899 date bug — race times stored as "01:35" or ISO datetimes
+function cleanRaceTime(t) {
+  if (!t) return '';
+  // If it looks like a full ISO datetime with 1899, extract just the time part
+  if (String(t).includes('1899') || String(t).includes('T')) {
+    const m = String(t).match(/T?(\d{2}:\d{2})/);
+    if (m) {
+      const [h, min] = m[1].split(':');
+      const hour = parseInt(h);
+      return (hour > 12 ? hour - 12 : hour) + ':' + min;
+    }
+  }
+  // Already a clean time string like "01:35" or "1:35"
+  const m = String(t).match(/(\d{1,2}):(\d{2})/);
+  if (m) {
+    const hour = parseInt(m[1]);
+    return (hour > 12 ? hour - 12 : hour) + ':' + m[2];
+  }
+  return String(t);
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  // Handle ISO datetime or HH:MM
+  const m = timeStr.match(/T?([0-9]{2}:[0-9]{2})/);
+  if (m) {
+    const [h, min] = m[1].split(':');
+    const hour = parseInt(h);
+    return (hour > 12 ? hour - 12 : hour) + ':' + min;
+  }
+  return timeStr;
+}
+
+function showNotice(page, msg, type) {
+  const el = document.getElementById('picks-loading');
+  el.className = 'notice ' + (type || '');
+  el.innerHTML = msg;
+  el.style.display = 'block';
+}
+
+// Manual horse name entry fallback (used when API runners unavailable)
+function renderManualEntry(race) {
+  const panel = document.getElementById('race-pick-panel');
+  const myPick = picks[currentPlayer] && picks[currentPlayer][race.race_id];
+  panel.innerHTML += `
+    <div class="form-group mt-12">
+      <label>Type horse name manually</label>
+      <input type="text" id="manual-horse-${race.race_id}"
+        placeholder="e.g. Diligent Harry"
+        value="${myPick || ''}"
+        style="text-transform:uppercase">
+    </div>
+    <button class="btn btn-green btn-full mt-8"
+      onclick="saveManualPick('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')" >
+      Save pick
+    </button>`;
+}
+
+function saveManualPick(raceId, course, time, name) {
+  const inp = document.getElementById('manual-horse-' + raceId);
+  if (!inp || !inp.value.trim()) return;
+  if (!picks[currentPlayer]) picks[currentPlayer] = {};
+  picks[currentPlayer][raceId] = inp.value.trim().toUpperCase();
+  // Store a fake runner so submit works
+  if (!runners[raceId]) runners[raceId] = [{ name: inp.value.trim().toUpperCase(), number:'', jockey:'', is_nr:false }];
+  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  renderRaceTabs();
+  showRace(currentRaceIdx);
+  renderPicksSummary();
+}
+
+
+function showRunnerDetail(sel, raceId) {
+  const detail = document.getElementById('runner-detail-' + raceId);
+  if (!detail) return;
+  const horseName = sel.value;
+  if (!horseName) { detail.style.display = 'none'; return; }
+
+  const raceRunners = runners[raceId] || [];
+  const h = raceRunners.find(r => r.name === horseName);
+  if (!h) { detail.style.display = 'none'; return; }
+
+  const colourMap = {
+    'b': 'Bay', 'br': 'Brown', 'ch': 'Chestnut', 'gr': 'Grey',
+    'bl': 'Black', 'ro': 'Roan', 'wh': 'White', 'b/br': 'Bay/Brown'
+  };
+  const colourLabel = colourMap[(h.colour||'').toLowerCase()] || h.colour || '';
+
+  const parts = [];
+  if (h.age)      parts.push('<strong>Age:</strong> ' + h.age);
+  if (colourLabel) parts.push('<strong>Colour:</strong> ' + colourLabel);
+  if (h.trainer)  parts.push('<strong>Trainer:</strong> ' + h.trainer);
+  if (h.draw)     parts.push('<strong>Draw:</strong> ' + h.draw);
+  if (h.lbs)      parts.push('<strong>Weight:</strong> ' + h.lbs + 'lbs');
+  if (h.ofr)      parts.push('<strong>OR:</strong> ' + h.ofr);
+  if (h.form)     parts.push('<strong>Form:</strong> ' + h.form);
+  if (h.last_run) parts.push('<strong>Last run:</strong> ' + h.last_run + ' days ago');
+
+  detail.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+  detail.style.display = 'block';
+}
+
+// Show race-by-race breakdown for a player's specific week
+async function showWeekDetail(player, week, tile) {
+  const detailEl = document.getElementById('week-detail-' + player);
+  if (!detailEl) return;
+
+  // Toggle off if already showing this week
+  if (detailEl.dataset.week === String(week) && detailEl.style.display === 'block') {
+    detailEl.style.display = 'none';
+    detailEl.dataset.week = '';
+    document.querySelectorAll(`[data-player="${player}"]`).forEach(t => {
+      t.style.background = '#fff';
+      t.style.borderColor = 'var(--border)';
+    });
+    return;
+  }
+
+  // Highlight selected tile, reset others
+  document.querySelectorAll(`[data-player="${player}"]`).forEach(t => {
+    t.style.background = '#fff';
+    t.style.borderColor = 'var(--border)';
+  });
+  tile.style.background = 'var(--green-light)';
+  tile.style.borderColor = 'var(--green)';
+
+  detailEl.dataset.week = String(week);
+  detailEl.style.display = 'block';
+  detailEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">Loading...</div>';
+
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=getpicks&week=${week}`);
+    const data = await res.json();
+    const weekPicks = (data.picks || []).filter(p => p.player === player);
+
+    if (weekPicks.length === 0) {
+      detailEl.innerHTML = '<div style="padding:12px;color:var(--text-muted);font-size:13px">No picks found for this week.</div>';
+      return;
+    }
+
+    weekPicks.sort((a, b) => (a.race_time||'').localeCompare(b.race_time||''));
+
+    const medals = ['🥇','🥈','🥉'];
+    const totalPts = weekPicks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
+    const scored = weekPicks.filter(p => parseInt(p.points) > 0).length;
+
+    let html = `<div style="padding:8px 14px;border-bottom:1.5px solid var(--border);
+      font-size:12px;font-weight:600;color:var(--text-muted);
+      display:flex;justify-content:space-between;align-items:center">
+      <span>Week ${week}</span>
+      <span style="color:var(--green)">${totalPts} pts &nbsp;·&nbsp; ${scored}/${weekPicks.length} scored</span>
+    </div>`;
+
+    weekPicks.forEach(p => {
+      const pts = parseInt(p.points) || 0;
+      const finish = String(p.finish || '—');
+      const finishNum = parseInt(finish);
+      const medal = (!isNaN(finishNum) && finishNum <= 3) ? medals[finishNum-1] : '';
+      const ordinal = !isNaN(finishNum) ? (finishNum===1?'st':finishNum===2?'nd':finishNum===3?'rd':'th') : '';
+      const isPlaced = pts > 0;
+
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
+        border-bottom:1px solid var(--border);
+        background:${isPlaced ? 'var(--green-light)' : '#fff'}">
+        <div style="min-width:40px;font-size:12px;color:var(--text-muted);flex-shrink:0">
+          ${cleanRaceTime(p.race_time||'')}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${p.horse}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${p.course||''}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;min-width:60px">
+          <div style="font-size:12px;color:var(--text-muted)">
+            ${medal} ${finish !== '—' ? finish + ordinal : finish}
+          </div>
+          ${p.sp ? `<div style="font-size:11px;color:var(--text-muted)">${p.sp}</div>` : ''}
+          <span class="points-badge pts-${Math.min(pts,3)}" style="font-size:11px;padding:2px 7px">
+            ${pts}pt${pts!==1?'s':''}
+          </span>
+        </div>
+      </div>`;
+    });
+
+    detailEl.innerHTML = html;
+  } catch(e) {
+    detailEl.innerHTML = '<div style="padding:12px;color:var(--red);font-size:13px">Could not load picks.</div>';
+  }
+}
+
+
+// =============================================
+// RUNNER SCORING ALGORITHM
+// =============================================
+
+// Form data loaded from Google Sheet (set by loadFormData())
+let FORM_DATA = {
+  trainerForm: {},      // trainer name -> { wins, runs, pct }
+  jockeyForm: {},       // jockey name -> { wins, runs, pct }
+  hotTrainers: {},      // trainer name -> { pct } (last 14 days)
+  hotJockeys: {},       // jockey name -> { pct } (last 14 days)
+  courseTrainers: {},   // "trainer|course" -> { pct }
+  courseJockeys: {},    // "jockey|course" -> { pct }
+  trainerJockeyCombos: {}, // "trainer|jockey|course" -> comboPct
+  horseOdds: {},        // horse name -> best odds string
+  cdWinners: {},        // horse name (lowercase) -> course (C&D winner flag)
+  loaded: false
+};
+
+// Load form data from Apps Script (reads FormData sheet)
+async function loadFormData() {
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getformdata');
+    const data = await res.json();
+    if (data.error || !data.trainerForm) return;
+    FORM_DATA = data;
+    FORM_DATA.loaded = true;
+    console.log('Form data loaded:', Object.keys(data.trainerForm).length, 'trainers');
+  } catch(e) {
+    console.log('Form data not available:', e.message);
+  }
+}
+
+// Draw bias by course
+const DRAW_BIAS = {
+  'Chester':        -2.5,
+  'Ascot':           1.5,
+  'York':           -1.0,
+  'Sandown':        -0.5,
+  'Haydock':        -0.5,
+  'Newbury':         0.0,
+  'Goodwood':       -1.0,
+  'Epsom':          -1.5,
+  'Newmarket':       0.5,
+  'Lingfield':      -1.0,
+  'Wolverhampton':  -1.0,
+  'Kempton':         0.0,
+  'Windsor':        -0.5,
+  'Nottingham':      0.0,
+  'Leicester':       0.0,
+  'Salisbury':      -0.5,
+  'Bath':           -0.5,
+  'Carlisle':       -0.5,
+  'Beverley':       -1.5,
+  'Catterick':      -1.0,
+  'Ripon':          -0.5,
+  'Thirsk':         -0.5,
+  'Redcar':          0.0,
+  'Musselburgh':    -0.5,
+  'Ayr':             0.0,
+  'Hamilton':       -1.0,
+  'Chepstow':       -0.5,
+};
+
+function scoreRunner(r, fieldSize, course, fieldRunners) {
+  const breakdown = [];
+  let total = 0;
+
+  // ── 1. FORM (max 15 pts) ──────────────────────────────────────────
+  const formStr = (r.form || '').replace(/[^0-9PFURpu]/gi, '');
+  let formScore = 0;
+  if (formStr.length > 0) {
+    const recent = formStr.split('').reverse().slice(0, 4);
+    const weights = [5, 3, 2, 1];
+    recent.forEach(function(f, i) {
+      const pos = parseInt(f);
+      if (!isNaN(pos)) {
+        formScore += (pos === 1 ? 3 : pos === 2 ? 2 : pos === 3 ? 1 : 0) * weights[i];
+      }
+    });
+    formScore = Math.min(formScore, 15);
+  }
+  total += formScore;
+  breakdown.push({
+    label: 'Recent form',
+    score: formScore, max: 15,
+    detail: formStr ? formStr.split('').reverse().slice(0,4).join('') + (formStr.length > 4 ? '…' : '') : 'No form'
+  });
+
+  // ── 2. DAYS SINCE LAST RUN (max 8 pts) ───────────────────────────
+  // ── 2. DAYS SINCE LAST RUN (max 4 pts) ──────────────────────────
+  // Flattened curve — most gaps are fine, only penalise extreme cases
+  // A 49-day break is as valid as a 18-day break for a quality horse
+  const days = parseInt(r.last_run);
+  let freshnessScore = 0, freshnessDetail = '';
+  if (!isNaN(days)) {
+    if      (days >= 7  && days <= 90) { freshnessScore = 4; freshnessDetail = days + 'd — fit to run'; }
+    else if (days < 7)                 { freshnessScore = 2; freshnessDetail = days + 'd — very quick return'; }
+    else if (days > 90 && days <= 180) { freshnessScore = 2; freshnessDetail = days + 'd — long break'; }
+    else                               { freshnessScore = 0; freshnessDetail = days + 'd — very long break'; }
+  } else { freshnessScore = 4; freshnessDetail = 'Unknown'; }
+  total += freshnessScore;
+  breakdown.push({ label: 'Freshness', score: freshnessScore, max: 4, detail: freshnessDetail });
+
+  // ── 3. OFFICIAL RATING relative to field (max 10 pts) ────────────
+  const orVal = parseInt(r.ofr) || 0;
+  let orScore = 0, orDetail = '';
+  if (orVal > 0) {
+    const fieldORs = fieldRunners.map(function(h) { return parseInt(h.ofr) || 0; }).filter(function(v) { return v > 0; });
+    if (fieldORs.length > 1) {
+      const maxOR = Math.max.apply(null, fieldORs);
+      const minOR = Math.min.apply(null, fieldORs);
+      orScore = Math.round(((orVal - minOR) / (maxOR - minOR || 1)) * 10);
+      orDetail = 'OR ' + orVal + (orVal === maxOR ? ' (top rated)' : ' (' + (maxOR - orVal) + ' off top)');
+    } else { orScore = 5; orDetail = 'OR ' + orVal; }
+  } else { orDetail = 'No OR (Group/Listed)'; }
+  total += orScore;
+  breakdown.push({ label: 'Official Rating', score: orScore, max: 10, detail: orDetail });
+
+  // ── 4. DRAW (max 3 pts) — only meaningful at known bias tracks with 10+ runners ──
+  const drawNum = parseInt(r.draw);
+  const bias = DRAW_BIAS[course] || 0;
+  let drawScore = 0, drawDetail = '';
+  // Only apply draw bias if: strong bias course AND large field (10+)
+  const drawMatters = Math.abs(bias) >= 1.0 && fieldSize >= 10;
+  if (!isNaN(drawNum) && drawMatters) {
+    const normDraw = (drawNum - 1) / Math.max(fieldSize - 1, 1);
+    drawScore = Math.round((bias < 0 ? (1 - normDraw) : normDraw) * 3);
+    const biasLabel = Math.abs(bias) >= 2 ? 'strong' : 'moderate';
+    drawDetail = 'Draw ' + drawNum + ' — ' + biasLabel + ' ' + (bias < 0 ? 'low' : 'high') + ' bias at ' + course + ' (' + fieldSize + ' runners)';
+  } else if (isNaN(drawNum)) {
+    drawScore = 0; drawDetail = 'No draw (jumps/no stalls)';
+  } else {
+    drawScore = 0; drawDetail = 'Draw ' + drawNum + ' — not significant here';
+  }
+  total += drawScore;
+  breakdown.push({ label: 'Draw', score: drawScore, max: 3, detail: drawDetail });
+
+  // ── 5. WEIGHT relative to field (max 5 pts) ──────────────────────
+  const lbs = parseInt(r.lbs);
+  let weightScore = 0, weightDetail = '';
+  if (!isNaN(lbs) && lbs > 0) {
+    const fieldWeights = fieldRunners.map(function(h) { return parseInt(h.lbs) || 0; }).filter(function(v) { return v > 0; });
+    if (fieldWeights.length > 1) {
+      const maxLbs = Math.max.apply(null, fieldWeights);
+      const minLbs = Math.min.apply(null, fieldWeights);
+      weightScore = Math.round(((maxLbs - lbs) / (maxLbs - minLbs || 1)) * 5);
+      weightDetail = lbs + 'lbs (' + (lbs === minLbs ? 'lightest' : lbs === maxLbs ? 'top weight' : (lbs - minLbs) + 'lbs above minimum') + ')';
+    } else { weightScore = 3; weightDetail = lbs + 'lbs'; }
+  } else { weightDetail = 'Unknown'; }
+  total += weightScore;
+  breakdown.push({ label: 'Weight', score: weightScore, max: 5, detail: weightDetail });
+
+  // ── 6. TRAINER (max 5 pts) ───────────────────────────────────────
+  const trainerName = (r.trainer || '').trim();
+  let trainerScore = 0, trainerDetail = trainerName || 'Unknown';
+
+  const TRAINER_FALLBACK = {
+    "John Gosden": 3, "John & Thady Gosden": 3, "Charlie Appleby": 3,
+    "Aidan O'Brien": 3, "A P O'Brien": 3, "AP O'Brien": 3,
+    "Roger Varian": 3, "William Haggas": 3, "Sir Michael Stoute": 3,
+    "Andrew Balding": 2, "Ralph Beckett": 2, "Richard Hannon": 2,
+    "Mark Johnston": 2, "Charlie Johnston": 2, "Saeed bin Suroor": 2,
+    "Simon & Ed Crisford": 2, "Ed Crisford": 2, "Hugo Palmer": 2,
+    "Kevin Ryan": 1.5, "Clive Cox": 1.5, "Karl Burke": 1.5,
+    "Richard Fahey": 1.5, "Tim Easterby": 1.5, "David O'Meara": 1.5,
+    "George Boughey": 1.5, "Ed Walker": 1.5, "Archie Watson": 1.5,
+    "Joseph O'Brien": 2, "Joseph Patrick O'Brien": 2, "Dermot Weld": 2,
+    "Jessica Harrington": 2, "G M Lyons": 2, "Ger Lyons": 2,
+    "Willie Mullins": 3, "Nicky Henderson": 3, "Paul Nicholls": 2,
+    "Gordon Elliott": 2, "Henry de Bromhead": 2, "Henry De Bromhead": 2,
+    "Dan Skelton": 1.5, "Kim Bailey": 1,
+  };
+
+  if (FORM_DATA.loaded && trainerName) {
+    const hot = FORM_DATA.hotTrainers[trainerName];
+    const courseKey = trainerName + '|' + course;
+    const courseForm = FORM_DATA.courseTrainers[courseKey];
+
+    // Base score from fallback list
+    trainerScore = TRAINER_FALLBACK[trainerName] || 1;
+    trainerDetail = trainerName;
+
+    // Hot trainer bonus (+1.5)
+    if (hot) {
+      trainerScore = Math.min(5, trainerScore + 1.5);
+      trainerDetail += ' 🔥 (' + hot.pct + '% last 14d)';
+    }
+    // Course specialist bonus (+1)
+    if (courseForm) {
+      trainerScore = Math.min(5, trainerScore + 1);
+      trainerDetail += ' | ' + course + ' specialist ' + courseForm.pct + '%';
+    }
+    if (!hot && !courseForm) trainerDetail += ' (no hot data)';
+  } else {
+    trainerScore = TRAINER_FALLBACK[trainerName] || 0;
+    trainerDetail = trainerName + (trainerScore > 0 ? ' ★' : '');
+  }
+  total += trainerScore;
+  breakdown.push({ label: 'Trainer', score: trainerScore, max: 5, detail: trainerDetail });
+
+  // ── 7. JOCKEY (max 5 pts) ────────────────────────────────────────
+  const jockeyName = (r.jockey || '').replace(/\([0-9]+\)$/, '').trim();
+  let jockeyScore = 0, jockeyDetail = jockeyName || 'Unknown';
+
+  const JOCKEY_FALLBACK = {
+    "Frankie Dettori": 3, "Ryan Moore": 3, "William Buick": 3,
+    "Oisin Murphy": 3, "James McDonald": 3,
+    "Tom Marquand": 2, "Jim Crowley": 2, "Adam Kirby": 2,
+    "David Egan": 2, "Hollie Doyle": 2, "Rossa Ryan": 2,
+    "Silvestre De Sousa": 2, "Andrea Atzeni": 2,
+    "Dylan Browne McMonagle": 2, "Colin Keane": 2, "Billy Loughnane": 2,
+    "Hector Crouch": 1.5, "Kieran Shoemark": 1.5, "Daniel Tudhope": 1.5,
+    "Ben Curtis": 1.5, "Jason Hart": 1.5, "David Probert": 1.5,
+    "Cieren Fallon": 1.5, "Paul Hanagan": 1.5, "Joe Fanning": 1.5,
+    "Sean Levey": 1.5, "Richard Kingscote": 1.5, "James Doyle": 2,
+    "Paul Townend": 3, "Rachael Blackmore": 2, "Patrick Mullins": 2,
+    "Harry Cobden": 2, "Nico de Boinville": 2, "Jack Kennedy": 2,
+  };
+
+  if (FORM_DATA.loaded && jockeyName) {
+    const hot = FORM_DATA.hotJockeys[jockeyName];
+    const courseKey = jockeyName + '|' + course;
+    const courseForm = FORM_DATA.courseJockeys[courseKey];
+    const comboKey = trainerName + '|' + jockeyName + '|' + course;
+    const combo = FORM_DATA.trainerJockeyCombos[comboKey];
+
+    jockeyScore = JOCKEY_FALLBACK[jockeyName] || 1;
+    jockeyDetail = jockeyName;
+
+    if (hot) {
+      jockeyScore = Math.min(5, jockeyScore + 1.5);
+      jockeyDetail += ' 🔥 (' + hot.pct + '% last 14d)';
+    }
+    if (courseForm) {
+      jockeyScore = Math.min(5, jockeyScore + 0.5);
+      jockeyDetail += ' | ' + course + ' ' + courseForm.pct + '%';
+    }
+    if (combo) {
+      jockeyScore = Math.min(5, jockeyScore + 0.5);
+      jockeyDetail += ' | Combo ' + combo + '%';
+    }
+    if (!hot && !courseForm && !combo) jockeyDetail += ' (no hot data)';
+  } else {
+    jockeyScore = JOCKEY_FALLBACK[jockeyName] || 0;
+    jockeyDetail = jockeyName + (jockeyScore > 0 ? ' ★' : '');
+  }
+  total += jockeyScore;
+  breakdown.push({ label: 'Jockey', score: jockeyScore, max: 5, detail: jockeyDetail });
+
+  // ── 8. COURSE & DISTANCE WINNER bonus (max 3 pts) ────────────────
+  const horseKey = (r.name || '').toLowerCase();
+  const isCDWinner = FORM_DATA.cdWinners && FORM_DATA.cdWinners[horseKey];
+  let cdScore = 0, cdDetail = 'No C&D win on record';
+  if (isCDWinner) {
+    cdScore = 3;
+    cdDetail = 'Won over C&D at ' + course + ' ✓';
+  }
+  total += cdScore;
+  breakdown.push({ label: 'C&D Winner', score: cdScore, max: 3, detail: cdDetail });
+
+  // ── 9. BEST ODDS indicator (informational only) ───────────────────
+  const oddsKey = horseKey;
+  const rawOdds = FORM_DATA.horseOdds[oddsKey] || null;
+  const bestOdds = rawOdds && /^\d+\/\d+$|^EVS$/.test(rawOdds.trim()) ? rawOdds.trim() : null;
+  if (bestOdds) {
+    breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
+  }
+
+  return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds };
+}
+
+function renderScoreBar(score, max, color) {
+  const pct = Math.round((score / max) * 100);
+  color = color || 'var(--green)';
+  return '<div style="height:4px;background:var(--gray-light);border-radius:2px;flex:1">' +
+    '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:2px;transition:width 0.3s"></div>' +
+  '</div>';
+}
+
+// =============================================
+// ALGORITHM ANALYZER
+// =============================================
+
+// Load and display analyzer data when tab is opened
+async function loadAnalyzer() {
+  const content = document.getElementById('analyzer-content');
+  const loading = document.getElementById('analyzer-loading');
+  const error = document.getElementById('analyzer-error');
+  
+  loading.style.display = 'block';
+  content.style.display = 'none';
+  error.style.display = 'none';
+  
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
+    const data = await res.json();
+    
+    if (data.error) throw new Error(data.error);
+    
+    // Display summary
+    document.getElementById('analyzer-hit-rate').textContent = data.hitRate + '%';
+    document.getElementById('analyzer-failure-count').textContent = data.totalRaces;
+    
+    // Build weight controls
+    const weightsControl = document.getElementById('analyzer-weights-controls');
+    const weights = {
+      form_weight: { label: 'Form', current: 15 },
+      freshness_weight: { label: 'Freshness', current: 4 },
+      or_weight: { label: 'OR', current: 10 },
+      draw_weight: { label: 'Draw', current: 3 },
+      weight_weight: { label: 'Weight', current: 5 },
+      trainer_weight: { label: 'Trainer', current: 5 },
+      jockey_weight: { label: 'Jockey', current: 5 },
+      cd_weight: { label: 'C&D', current: 3 }
+    };
+    
+    weightsControl.innerHTML = Object.entries(weights).map(([key, val]) => `
+      <div>
+        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">${val.label}</label>
+        <input type="number" id="${key}" value="${val.current}" min="0" max="20" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px">
+      </div>
+    `).join('');
+    
+    // Display patterns
+    if (data.failures && data.failures.length > 0) {
+      const patterns = {};
+      data.failures.forEach(f => {
+        if (f.reasons) {
+          f.reasons.forEach(r => {
+            patterns[r] = (patterns[r] || 0) + 1;
+          });
+        }
+      });
+      
+      const patternHtml = Object.entries(patterns)
+        .sort((a, b) => b[1] - a[1])
+        .map(([reason, count]) => 
+          `<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
+            <span>${reason}</span>
+            <strong>${count} races</strong>
+          </div>`
+        ).join('');
+      document.getElementById('analyzer-patterns').innerHTML = patternHtml || 'No patterns found';
+    }
+    
+    // Display failures
+    if (data.failures) {
+      const failureHtml = data.failures.slice(0, 10).map(f => `
+        <div style="padding:10px;border-bottom:1px solid var(--border);margin-bottom:8px">
+          <div style="font-weight:600;margin-bottom:4px">${f.course} ${f.time}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
+            Week ${f.week} — ${f.name}
+          </div>
+          <div style="background:var(--green-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+            <strong>Winner:</strong> ${f.winner} (${f.winnerScore}pts, ranked #${f.winnerRank})
+          </div>
+          <div style="background:var(--amber-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
+            <strong>Top pick:</strong> ${f.topPick} (${f.topScore}pts) — <strong>Gap: ${f.scoreDiff}pts</strong>
+          </div>
+          ${f.reasons ? '<div style="font-size:11px;color:#666">' + f.reasons.join(' • ') + '</div>' : ''}
+        </div>
+      `).join('');
+      document.getElementById('analyzer-failures').innerHTML = failureHtml || 'No failures found';
+    }
+    
+    loading.style.display = 'none';
+    content.style.display = 'block';
+  } catch(e) {
+    loading.style.display = 'none';
+    error.style.display = 'block';
+    error.textContent = 'Error loading analysis: ' + e.message;
+  }
+}
+
+// Test weight adjustments
+async function testWeights() {
+  const btn = document.getElementById('analyzer-test-btn');
+  const result = document.getElementById('analyzer-test-result');
+  
+  btn.disabled = true;
+  result.style.display = 'none';
+  
+  try {
+    const params = new URLSearchParams({
+      action: 'testwweights',
+      form_weight: document.getElementById('form_weight').value || 15,
+      freshness_weight: document.getElementById('freshness_weight').value || 4,
+      or_weight: document.getElementById('or_weight').value || 10,
+      draw_weight: document.getElementById('draw_weight').value || 3,
+      weight_weight: document.getElementById('weight_weight').value || 5,
+      trainer_weight: document.getElementById('trainer_weight').value || 5,
+      jockey_weight: document.getElementById('jockey_weight').value || 5,
+      cd_weight: document.getElementById('cd_weight').value || 3
+    });
+    
+    const res = await fetch(SCRIPT_URL + '?' + params);
+    const data = await res.json();
+    
+    if (data.error) {
+      result.textContent = 'Error: ' + data.error;
+    } else {
+      result.textContent = `With new weights: ${data.hitsWithNewWeights} races hit (${data.newHitRate}%)`;
+    }
+    result.style.display = 'block';
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+    result.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Intercept showPage to load analyzer on first open
+const originalShowPage = window.showPage;
+window.showPage = function(name) {
+  originalShowPage(name);
+  if (name === 'analyzer') {
+    loadAnalyzer();
+  }
+};
+</script>
+</body>
+</html>
