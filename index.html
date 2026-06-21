@@ -1405,7 +1405,19 @@ async function fetchRaceResults(raceId, week, btn) {
     // Save score log for all runners in this race
     try {
       const race = races.find(r => r.race_id === raceId);
-      const raceRunners = runners[raceId] || [];
+      
+      // CRITICAL FIX: Ensure runners are loaded before scoring
+      // If not already in memory, fetch them now
+      let raceRunners = runners[raceId] || [];
+      if (raceRunners.length === 0) {
+        const runnersRes = await fetch(SCRIPT_URL + '?action=getrunners&race_id=' + encodeURIComponent(raceId));
+        const runnersData = await runnersRes.json();
+        if (runnersData.runners && runnersData.runners.length > 0) {
+          raceRunners = runnersData.runners;
+          runners[raceId] = raceRunners; // cache for future use
+        }
+      }
+      
       if (race && raceRunners.length > 0) {
         const fieldSize = raceRunners.filter(r => !r.is_nr).length;
         const active = raceRunners.filter(r => !r.is_nr);
