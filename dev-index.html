@@ -1222,9 +1222,15 @@ async function logRunnersForRace(raceId, course, time, name) {
     
     // Validate FORM_DATA is available
     if (!FORM_DATA || !FORM_DATA.trainerForm) {
-      console.log('⚠ FORM_DATA not ready, skipping runner logging for', course, time);
+      console.log('⚠ FORM_DATA not ready');
+      console.log('FORM_DATA:', FORM_DATA);
       return;
     }
+    
+    // Check FORM_DATA structure
+    console.log('FORM_DATA keys:', Object.keys(FORM_DATA));
+    console.log('courseTrainers exists?', !!FORM_DATA.courseTrainers);
+    console.log('courseTrainers is array?', Array.isArray(FORM_DATA.courseTrainers));
     
     console.log('Scoring', raceRunners.length, 'runners for', course, time);
     
@@ -1233,7 +1239,29 @@ async function logRunnersForRace(raceId, course, time, name) {
     for (let idx = 0; idx < raceRunners.length; idx++) {
       try {
         const r = raceRunners[idx];
-        const scored = scoreRunner(r, course, FORM_DATA);
+        
+        // Try to score, with fallback to minimal scoring
+        let scored;
+        try {
+          scored = scoreRunner(r, course, FORM_DATA);
+        } catch(scoreErr) {
+          console.log('scoreRunner error for', r.name + ':', scoreErr.message);
+          // Fallback: just use OR value
+          scored = {
+            total: r.ofr || 0,
+            max: 50,
+            breakdown: [
+              { label: 'Form', score: 0 },
+              { label: 'Freshness', score: 0 },
+              { label: 'OR', score: r.ofr || 0 },
+              { label: 'Draw', score: 0 },
+              { label: 'Weight', score: 0 },
+              { label: 'Trainer', score: 0 },
+              { label: 'Jockey', score: 0 },
+              { label: 'C&D Winner', score: 0 }
+            ]
+          };
+        }
         
         if (!scored || !scored.breakdown) {
           console.log('⚠ Invalid score for', r.name);
@@ -1262,7 +1290,7 @@ async function logRunnersForRace(raceId, course, time, name) {
           f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
         });
       } catch(e) {
-        console.log('⚠ Error scoring runner:', e.message);
+        console.log('⚠ Error processing runner:', e.message);
       }
     }
     
