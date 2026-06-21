@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ITV Racing Predictor [DEV]</title>
+<title>ITV Racing Predictor — DEV</title>
 <style>
   :root {
     --green: #1a6b3a;
@@ -233,7 +233,7 @@
 <body>
 
 <header>
-  <h1>🏇 ITV Racing Predictor [DEV]</h1>
+  <h1>🏇 ITV Racing Predictor — DEV</h1>
   <p id="header-date">Loading...</p>
 </header>
 
@@ -431,7 +431,7 @@
 // =============================================
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZrP3klFOuYIcV-Ihw2gN9dc4fq7t_5fASmnzGLlsf2KzC6AZjFdR8JBG0PMGMow78Pw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxZrP3klFOuYIcV-Ihw2gN9dc4fq7t_5fASmnzGLlsf2KzC6AZjFdR8JBG0PMGMow78Pw/exec'; // DEV
 
 // =============================================
 // STATE
@@ -1107,8 +1107,34 @@ async function submitPick(raceId, course, time, name) {
       return;
     }
     
-    // NEW: Log all runners for this race to ScoreLog
+    // NEW: Log all runners with scores for this race to ScoreLog
     if (runners[raceId] && runners[raceId].length > 0) {
+      // Score all runners in this race
+      const scoredRunners = runners[raceId].map(r => {
+        const scored = scoreRunner(r, course, formData);
+        return {
+          name: r.name,
+          jockey: r.jockey,
+          trainer: r.trainer,
+          is_nr: r.is_nr,
+          draw: r.draw,
+          lbs: r.lbs,
+          ofr: r.ofr,
+          form: r.form,
+          last_run: r.last_run,
+          score: scored.total,
+          max: scored.max,
+          f_form: scored.breakdown.find(b => b.label === 'Form')?.score || 0,
+          f_fresh: scored.breakdown.find(b => b.label === 'Freshness')?.score || 0,
+          f_or: scored.breakdown.find(b => b.label === 'OR')?.score || 0,
+          f_draw: scored.breakdown.find(b => b.label === 'Draw')?.score || 0,
+          f_weight: scored.breakdown.find(b => b.label === 'Weight')?.score || 0,
+          f_trainer: scored.breakdown.find(b => b.label === 'Trainer')?.score || 0,
+          f_jockey: scored.breakdown.find(b => b.label === 'Jockey')?.score || 0,
+          f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
+        };
+      });
+      
       const runnerParams = new URLSearchParams({
         action: 'logracerunners',
         week: weekNumber,
@@ -1116,13 +1142,13 @@ async function submitPick(raceId, course, time, name) {
         course: course,
         race_time: time,
         race_name: name,
-        runners: JSON.stringify(runners[raceId])
+        runners: JSON.stringify(scoredRunners)
       });
       fetch(SCRIPT_URL + '?' + runnerParams.toString())
         .then(r => r.json())
         .then(d => {
           if (d.success) {
-            console.log('Logged ' + d.logged + ' runners for ' + course + ' ' + time);
+            console.log('Logged ' + d.logged + ' runners (scored) for ' + course + ' ' + time);
           } else if (d.error) {
             console.log('Warning: Could not log runners - ' + d.error);
           }
