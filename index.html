@@ -1106,6 +1106,30 @@ async function submitPick(raceId, course, time, name) {
       btn.textContent = originalText || 'Submit ✓';
       return;
     }
+    
+    // NEW: Log all runners for this race to ScoreLog
+    if (runners[raceId] && runners[raceId].length > 0) {
+      const runnerParams = new URLSearchParams({
+        action: 'logracerunners',
+        week: weekNumber,
+        race_id: raceId,
+        course: course,
+        race_time: time,
+        race_name: name,
+        runners: JSON.stringify(runners[raceId])
+      });
+      fetch(SCRIPT_URL + '?' + runnerParams.toString())
+        .then(r => r.json())
+        .then(d => {
+          if (d.success) {
+            console.log('Logged ' + d.logged + ' runners for ' + course + ' ' + time);
+          } else if (d.error) {
+            console.log('Warning: Could not log runners - ' + d.error);
+          }
+        })
+        .catch(e => console.log('Error logging runners:', e));
+    }
+    
     if (!picks[currentPlayer]) picks[currentPlayer] = {};
     picks[currentPlayer][raceId] = horse;
     if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
