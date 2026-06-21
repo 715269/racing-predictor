@@ -1109,60 +1109,60 @@ async function submitPick(raceId, course, time, name) {
     
     // NEW: Log all runners with scores for this race to ScoreLog
     if (runners[raceId] && runners[raceId].length > 0) {
-      console.log('Scoring ' + runners[raceId].length + ' runners for ' + course + ' ' + time);
-      
-      // Score all runners in this race
-      const scoredRunners = runners[raceId].map(r => {
-        const scored = scoreRunner(r, course, FORM_DATA);
-        return {
-          name: r.name,
-          jockey: r.jockey,
-          trainer: r.trainer,
-          is_nr: r.is_nr,
-          draw: r.draw,
-          lbs: r.lbs,
-          ofr: r.ofr,
-          form: r.form,
-          last_run: r.last_run,
-          score: scored.total,
-          max: scored.max,
-          f_form: scored.breakdown.find(b => b.label === 'Form')?.score || 0,
-          f_fresh: scored.breakdown.find(b => b.label === 'Freshness')?.score || 0,
-          f_or: scored.breakdown.find(b => b.label === 'OR')?.score || 0,
-          f_draw: scored.breakdown.find(b => b.label === 'Draw')?.score || 0,
-          f_weight: scored.breakdown.find(b => b.label === 'Weight')?.score || 0,
-          f_trainer: scored.breakdown.find(b => b.label === 'Trainer')?.score || 0,
-          f_jockey: scored.breakdown.find(b => b.label === 'Jockey')?.score || 0,
-          f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
-        };
-      });
-      
-      console.log('Scored runners:', scoredRunners);
-      
-      const runnerParams = new URLSearchParams({
-        action: 'logracerunners',
-        week: weekNumber,
-        race_id: raceId,
-        course: course,
-        race_time: time,
-        race_name: name,
-        runners: JSON.stringify(scoredRunners)
-      });
-      
-      console.log('Calling logracerunners endpoint...');
-      fetch(SCRIPT_URL + '?' + runnerParams.toString())
-        .then(r => r.json())
-        .then(d => {
-          console.log('logracerunners response:', d);
-          if (d.success) {
-            console.log('✓ Logged ' + d.logged + ' runners (scored) for ' + course + ' ' + time);
-          } else if (d.error) {
-            console.log('✗ Warning: Could not log runners - ' + d.error);
-          }
-        })
-        .catch(e => console.log('✗ Error logging runners:', e));
-    } else {
-      console.log('No runners found for ' + raceId + ' to log');
+      try {
+        console.log('Scoring ' + runners[raceId].length + ' runners for ' + course + ' ' + time);
+        
+        // Score all runners in this race
+        const scoredRunners = runners[raceId].map(r => {
+          const scored = scoreRunner(r, course, FORM_DATA);
+          return {
+            name: r.name,
+            jockey: r.jockey,
+            trainer: r.trainer,
+            is_nr: r.is_nr,
+            draw: r.draw,
+            lbs: r.lbs,
+            ofr: r.ofr,
+            form: r.form,
+            last_run: r.last_run,
+            score: scored.total,
+            max: scored.max,
+            f_form: scored.breakdown.find(b => b.label === 'Form')?.score || 0,
+            f_fresh: scored.breakdown.find(b => b.label === 'Freshness')?.score || 0,
+            f_or: scored.breakdown.find(b => b.label === 'OR')?.score || 0,
+            f_draw: scored.breakdown.find(b => b.label === 'Draw')?.score || 0,
+            f_weight: scored.breakdown.find(b => b.label === 'Weight')?.score || 0,
+            f_trainer: scored.breakdown.find(b => b.label === 'Trainer')?.score || 0,
+            f_jockey: scored.breakdown.find(b => b.label === 'Jockey')?.score || 0,
+            f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
+          };
+        });
+        
+        console.log('✓ Scored ' + scoredRunners.length + ' runners');
+        
+        const runnerParams = new URLSearchParams({
+          action: 'logracerunners',
+          week: weekNumber,
+          race_id: raceId,
+          course: course,
+          race_time: time,
+          race_name: name,
+          runners: JSON.stringify(scoredRunners)
+        });
+        
+        // Fire-and-forget with timeout
+        Promise.race([
+          fetch(SCRIPT_URL + '?' + runnerParams.toString()).then(r => r.json()),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        ])
+          .then(d => {
+            if (d.success) console.log('✓ Logged ' + d.logged + ' runners');
+            else console.log('✗ Log error: ' + (d.error || 'unknown'));
+          })
+          .catch(e => console.log('Log fetch error:', e.message));
+      } catch(e) {
+        console.log('✗ Error in logRaceRunners:', e.message);
+      }
     }
     
     if (!picks[currentPlayer]) picks[currentPlayer] = {};
