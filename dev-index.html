@@ -1168,15 +1168,6 @@ function renderPicksSummary() {
       html += `<button class="btn btn-green btn-full mt-12"
         onclick="submitAll()">Submit all ${unsent.length} remaining picks</button>`;
     }
-
-    // Save all runners button (if any picks submitted)
-    const submitted = races.filter(r => playerPicks[r.race_id] &&
-      submittedPicks[currentPlayer] && submittedPicks[currentPlayer][r.race_id]);
-    if (submitted.length > 0) {
-      html += `<button class="btn btn-blue btn-full mt-12" id="saveRunnersBtn"
-        onclick="saveAllRunners()">💾 Save all runners to analysis (${submitted.length} races)</button>
-        <p id="saveStatus" style="font-size:12px;margin-top:8px;color:var(--gray)"></p>`;
-    }
   }
 
   el.innerHTML = html;
@@ -1211,8 +1202,73 @@ async function submitPickDirect(raceId, course, time, name, horse) {
       if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
       submittedPicks[currentPlayer][raceId] = true;
       localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+      
+      // Automatically save all runners for this race to ScoreLog
+      console.log('Auto-saving runners for', course, time);
+      logRunnersForRace(raceId, course, time, name);
     }
   } catch(e) {}
+}
+
+async function logRunnersForRace(raceId, course, time, name) {
+  try {
+    // Find runners for this race by raceId
+    let raceRunners = runners[raceId];
+    
+    if (!raceRunners || raceRunners.length === 0) {
+      console.log('No runners found for raceId:', raceId);
+      return;
+    }
+    
+    console.log('Scoring', raceRunners.length, 'runners for', course, time);
+    
+    // Score all runners in this race
+    const scoredRunners = raceRunners.map(r => {
+      const scored = scoreRunner(r, course, FORM_DATA);
+      return {
+        name: r.name,
+        jockey: r.jockey,
+        trainer: r.trainer,
+        is_nr: r.is_nr,
+        draw: r.draw,
+        lbs: r.lbs,
+        ofr: r.ofr,
+        form: r.form,
+        last_run: r.last_run,
+        score: scored.total,
+        max: scored.max,
+        f_form: scored.breakdown.find(b => b.label === 'Form')?.score || 0,
+        f_fresh: scored.breakdown.find(b => b.label === 'Freshness')?.score || 0,
+        f_or: scored.breakdown.find(b => b.label === 'OR')?.score || 0,
+        f_draw: scored.breakdown.find(b => b.label === 'Draw')?.score || 0,
+        f_weight: scored.breakdown.find(b => b.label === 'Weight')?.score || 0,
+        f_trainer: scored.breakdown.find(b => b.label === 'Trainer')?.score || 0,
+        f_jockey: scored.breakdown.find(b => b.label === 'Jockey')?.score || 0,
+        f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
+      };
+    });
+    
+    const logParams = new URLSearchParams({
+      action: 'logracerunners',
+      week: weekNumber,
+      race_id: raceId,
+      course: course,
+      race_time: time,
+      race_name: name || '',
+      runners: JSON.stringify(scoredRunners)
+    });
+    
+    const logRes = await fetch(SCRIPT_URL + '?' + logParams.toString());
+    const logData = await logRes.json();
+    
+    if (logData.success) {
+      console.log('✓ Auto-saved', logData.logged, 'runners for', course, time);
+    } else {
+      console.log('⚠ Failed to save runners:', logData.error);
+    }
+  } catch(e) {
+    console.log('Error in logRunnersForRace:', e.message);
+  }
 }
 
 async function submitAll() {
@@ -1235,92 +1291,6 @@ async function submitAll() {
   showRace(currentRaceIdx);
 }
 
-async function saveAllRunners() {
-  const btn = document.getElementById('saveRunnersBtn');
-  const statusEl = document.getElementById('saveStatus');
-  
-  if (!btn) return;
-  
-  btn.disabled = true;
-  btn.textContent = '⏳ Saving runners...';
-  statusEl.textContent = 'Saving runners to analysis...';
-  
-  const playerPicks = picks[currentPlayer] || {};
-  const submitted = races.filter(r => playerPicks[r.race_id] &&
-    submittedPicks[currentPlayer] && submittedPicks[currentPlayer][r.race_id]);
-  
-  let saved = 0;
-  let failed = 0;
-  
-  for (let i = 0; i < submitted.length; i++) {
-    const race = submitted[i];
-    const raceId = race.race_id;
-    
-    try {
-      // Score all runners in this race
-      if (!runners[raceId] || runners[raceId].length === 0) {
-        console.log('No runners data for', race.course, race.time);
-        continue;
-      }
-      
-      const scoredRunners = runners[raceId].map(r => {
-        const scored = scoreRunner(r, race.course, FORM_DATA);
-        return {
-          name: r.name,
-          jockey: r.jockey,
-          trainer: r.trainer,
-          is_nr: r.is_nr,
-          draw: r.draw,
-          lbs: r.lbs,
-          ofr: r.ofr,
-          form: r.form,
-          last_run: r.last_run,
-          score: scored.total,
-          max: scored.max,
-          f_form: scored.breakdown.find(b => b.label === 'Form')?.score || 0,
-          f_fresh: scored.breakdown.find(b => b.label === 'Freshness')?.score || 0,
-          f_or: scored.breakdown.find(b => b.label === 'OR')?.score || 0,
-          f_draw: scored.breakdown.find(b => b.label === 'Draw')?.score || 0,
-          f_weight: scored.breakdown.find(b => b.label === 'Weight')?.score || 0,
-          f_trainer: scored.breakdown.find(b => b.label === 'Trainer')?.score || 0,
-          f_jockey: scored.breakdown.find(b => b.label === 'Jockey')?.score || 0,
-          f_cd: scored.breakdown.find(b => b.label === 'C&D Winner')?.score || 0
-        };
-      });
-      
-      const params = new URLSearchParams({
-        action: 'logracerunners',
-        week: weekNumber,
-        race_id: raceId,
-        course: race.course,
-        race_time: formatTime(race.time),
-        race_name: race.name || '',
-        runners: JSON.stringify(scoredRunners)
-      });
-      
-      const res = await fetch(SCRIPT_URL + '?' + params.toString());
-      const data = await res.json();
-      
-      if (data.success) {
-        saved += data.logged || 0;
-        console.log(`✓ Saved ${data.logged} runners for ${race.course} ${formatTime(race.time)}`);
-      } else {
-        failed++;
-        console.log(`✗ Failed for ${race.course} ${formatTime(race.time)}: ${data.error}`);
-      }
-      
-      btn.textContent = `⏳ Saving (${i+1}/${submitted.length})...`;
-    } catch(e) {
-      failed++;
-      console.log(`✗ Error saving ${race.course} ${formatTime(race.time)}:`, e.message);
-    }
-  }
-  
-  btn.disabled = false;
-  btn.textContent = `💾 Save all runners to analysis (${submitted.length} races)`;
-  statusEl.textContent = `✓ Saved ${saved} runners across ${submitted.length} races${failed > 0 ? ` (${failed} failed)` : ''}`;
-  statusEl.style.color = failed > 0 ? 'var(--red)' : 'var(--green)';
-}
 
 // =============================================
 // RESULTS
