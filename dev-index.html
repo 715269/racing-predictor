@@ -1109,9 +1109,11 @@ async function submitPick(raceId, course, time, name) {
     
     // NEW: Log all runners with scores for this race to ScoreLog
     if (runners[raceId] && runners[raceId].length > 0) {
+      console.log('Scoring ' + runners[raceId].length + ' runners for ' + course + ' ' + time);
+      
       // Score all runners in this race
       const scoredRunners = runners[raceId].map(r => {
-        const scored = scoreRunner(r, course, formData);
+        const scored = scoreRunner(r, course, FORM_DATA);
         return {
           name: r.name,
           jockey: r.jockey,
@@ -1135,6 +1137,8 @@ async function submitPick(raceId, course, time, name) {
         };
       });
       
+      console.log('Scored runners:', scoredRunners);
+      
       const runnerParams = new URLSearchParams({
         action: 'logracerunners',
         week: weekNumber,
@@ -1144,16 +1148,21 @@ async function submitPick(raceId, course, time, name) {
         race_name: name,
         runners: JSON.stringify(scoredRunners)
       });
+      
+      console.log('Calling logracerunners endpoint...');
       fetch(SCRIPT_URL + '?' + runnerParams.toString())
         .then(r => r.json())
         .then(d => {
+          console.log('logracerunners response:', d);
           if (d.success) {
-            console.log('Logged ' + d.logged + ' runners (scored) for ' + course + ' ' + time);
+            console.log('✓ Logged ' + d.logged + ' runners (scored) for ' + course + ' ' + time);
           } else if (d.error) {
-            console.log('Warning: Could not log runners - ' + d.error);
+            console.log('✗ Warning: Could not log runners - ' + d.error);
           }
         })
-        .catch(e => console.log('Error logging runners:', e));
+        .catch(e => console.log('✗ Error logging runners:', e));
+    } else {
+      console.log('No runners found for ' + raceId + ' to log');
     }
     
     if (!picks[currentPlayer]) picks[currentPlayer] = {};
