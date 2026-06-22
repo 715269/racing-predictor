@@ -1269,7 +1269,22 @@ async function logRunnersForRace(raceId, course, time, name) {
             ]
           };
         }
-    
+
+        scoredRunners.push({
+          name: r.name,
+          jockey: r.jockey || '',
+          trainer: r.trainer || '',
+          ofr: r.ofr || '',
+          draw: r.draw || '',
+          lbs: r.lbs || '',
+          is_nr: r.is_nr || false,
+          score: scored
+        });
+      } catch(runnerErr) {
+        console.log('Error scoring runner ' + idx + ':', runnerErr.message);
+      }
+    }
+
     if (scoredRunners.length === 0) {
       console.log('⚠ No runners scored successfully');
       return;
