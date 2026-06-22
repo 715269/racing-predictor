@@ -1534,6 +1534,9 @@ async function fetchRaceResults(raceId, week, btn) {
         const fieldSize = raceRunners.filter(r => !r.is_nr).length;
         const active = raceRunners.filter(r => !r.is_nr);
         const winner = data.top3 && data.top3[0] ? data.top3[0].horse : '';
+        
+        // Debug log: check if winner is being captured
+        console.log('Race:', race.race_id, 'Winner from API:', winner, 'Top3:', data.top3);
 
         // Send one row per runner to avoid URL length limits
         active.forEach(function(r) {
@@ -1548,7 +1551,7 @@ async function fetchRaceResults(raceId, week, btn) {
             course: race.course,
             race_time: race.time,
             race_name: race.name || '',
-            winner: winner,
+            winner: winner || '',
             horse: r.name,
             jockey: r.jockey || '',
             trainer: r.trainer || '',
