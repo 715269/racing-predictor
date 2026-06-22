@@ -921,7 +921,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
   let html = `<div style="display:flex;gap:6px;margin-bottom:10px;margin-top:4px">
     <span style="font-size:12px;color:var(--text-muted);align-self:center;margin-right:4px">Sort:</span>
     ${['score','number','or','form'].map(m => `
-      <button onclick="renderRunnerPicker(races.find(r=>r.race_id==='${race.race_id}'), false, '${m}')"
+      <button onclick="renderRunnerPicker(races.find(r=>r.race_id==='${race.race_id.replace(/'/g,"\\'")}'), false, '${m}')"
         style="padding:4px 10px;border-radius:12px;border:1.5px solid ${sortMode===m?'var(--green)':'var(--border)'};
         background:${sortMode===m?'var(--green)':'#fff'};color:${sortMode===m?'#fff':'var(--text-muted)'};
         font-size:12px;font-weight:500;cursor:pointer">
@@ -948,7 +948,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
     ].filter(Boolean).join(' · ');
 
     html += `
-      <div onclick="selectRunnerCard('${race.race_id}', '${r.name.replace(/'/g,"\\'")}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}', this)"
+      <div onclick="selectRunnerCard('${race.race_id.replace(/'/g,"\\'")}', '${r.name.replace(/'/g,"\\'")}', '${race.course}', '${formatTime(race.time)}', '${(race.name||'').replace(/'/g,"\\'")}', this)"
         style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;margin-bottom:6px;
           border:2px solid ${selected ? 'var(--green)' : 'var(--border)'};
           background:${selected ? 'var(--green-light)' : '#fff'};
@@ -987,13 +987,13 @@ function renderRunnerPicker(race, submitted, sortMode) {
               ${isTopScore ? ' ⭐' : ''}
             </span>
             ${runnerScore.bestOdds ? '<span style="font-size:11px;background:var(--amber-light);color:var(--amber);padding:1px 6px;border-radius:8px;font-weight:600;flex-shrink:0">' + runnerScore.bestOdds + '</span>' : ''}
-            <button onclick="event.stopPropagation();toggleBreakdown('bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}', this)"
+            <button onclick="event.stopPropagation();toggleBreakdown('bd_${race.race_id.replace(/'/g,"\\'")}${r.number||r.name.replace(/[^a-z0-9]/gi,'')}', this)"
               style="font-size:10px;color:var(--text-muted);background:none;border:1px solid var(--border);
               border-radius:6px;padding:1px 6px;cursor:pointer;flex-shrink:0">
               detail
             </button>
           </div>
-          <div id="bd_${race.race_id}_${r.number||r.name.replace(/[^a-z0-9]/gi,'')}"
+          <div id="bd_${race.race_id.replace(/'/g,"\\'")}${r.number||r.name.replace(/[^a-z0-9]/gi,'')}"
             style="display:none;margin-top:8px;padding:8px;background:var(--gray-light);
             border-radius:8px;font-size:12px">
             ${runnerScore.breakdown.map(b => {
@@ -1036,7 +1036,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
 
   if (myPick && !submitted) {
     html += `<button class="btn btn-green btn-full mt-12"
-      onclick="submitFromSummary('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
+      onclick="submitFromSummary('${race.race_id.replace(/'/g,"\\'")}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
       Submit ${myPick} ✓
     </button>`;
   }
@@ -1154,7 +1154,7 @@ function renderPicksSummary() {
           <td>${submitted
             ? '<span style="color:var(--green);font-size:12px">✓ sent</span>'
             : `<button class="btn btn-green" style="font-size:12px;padding:4px 10px"
-                onclick="submitFromSummary('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
+                onclick="submitFromSummary('${race.race_id.replace(/'/g,"\\'")}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')">
                 Submit</button>`}</td>
         </tr>`;
       }
@@ -1892,19 +1892,21 @@ function renderManualEntry(race) {
   panel.innerHTML += `
     <div class="form-group mt-12">
       <label>Type horse name manually</label>
-      <input type="text" id="manual-horse-${race.race_id}"
+      <input type="text" id="manual-horse-${race.race_id.replace(/'/g,"\\'")}${race.race_id.replace(/[^a-z0-9]/gi,'')}"
         placeholder="e.g. Diligent Harry"
         value="${myPick || ''}"
         style="text-transform:uppercase">
     </div>
     <button class="btn btn-green btn-full mt-8"
-      onclick="saveManualPick('${race.race_id}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')" >
+      onclick="saveManualPick('${race.race_id.replace(/'/g,"\\'")}','${race.course}','${formatTime(race.time)}','${(race.name||'').replace(/'/g,"\\'")}')" >
       Save pick
     </button>`;
 }
 
 function saveManualPick(raceId, course, time, name) {
-  const inp = document.getElementById('manual-horse-' + raceId);
+  // Sanitize raceId the same way it's used in the id attribute
+  const safeId = raceId.replace(/[^a-z0-9]/gi, '');
+  const inp = document.getElementById('manual-horse-' + raceId + safeId);
   if (!inp || !inp.value.trim()) return;
   if (!picks[currentPlayer]) picks[currentPlayer] = {};
   picks[currentPlayer][raceId] = inp.value.trim().toUpperCase();
