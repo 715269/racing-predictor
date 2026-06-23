@@ -1308,6 +1308,24 @@ async function logRunnersForRace(raceId, course, time, name) {
     } else {
       console.log('⚠ Failed to save runners:', logData.error);
     }
+    
+    // Also save scores to RaceRunners (new architecture)
+    const raceRunnersParams = new URLSearchParams({
+      action: 'logrunnerstoracerunnners',
+      week: weekNumber,
+      course: course,
+      race_time: time,
+      runners: JSON.stringify(scoredRunners)
+    });
+    
+    const rrRes = await fetch(SCRIPT_URL + '?' + raceRunnersParams.toString());
+    const rrData = await rrRes.json();
+    
+    if (rrData.success) {
+      console.log('✓ Updated', rrData.updated, 'runners in RaceRunners with scores');
+    } else {
+      console.log('⚠ Failed to update RaceRunners:', rrData.error);
+    }
   } catch(e) {
     console.log('Error in logRunnersForRace:', e.message);
   }
