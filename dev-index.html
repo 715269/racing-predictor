@@ -2414,12 +2414,6 @@ async function loadAnalyzer() {
       </div>
     `).join('');
     
-    // Hide patterns section
-    var patternsEl = document.getElementById('analyzer-patterns');
-    if (patternsEl && patternsEl.parentElement && patternsEl.parentElement.parentElement) {
-      patternsEl.parentElement.parentElement.style.display = 'none';
-    }
-    
     // Build race-by-race results
     const resultsHtml = allRaces.map(race => {
       let dateFormatted = 'No date';
