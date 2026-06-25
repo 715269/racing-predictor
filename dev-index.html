@@ -2361,9 +2361,38 @@ async function loadAnalyzer() {
     
     if (data.error) throw new Error(data.error);
     
+    // Build all races (successes + failures)
+    const allRaces = [];
+    
+    if (data.failures && Array.isArray(data.failures)) {
+      data.failures.forEach(f => {
+        if (!f.allRunners) return;
+        
+        // Check if this was a success (winner in top 3)
+        const finishers = f.allRunners
+          .filter(r => r.finish && r.finish <= 3)
+          .sort((a, b) => a.finish - b.finish);
+        
+        const isSuccess = finishers.some(r => r.isWinner);
+        
+        allRaces.push({
+          date: f.time,
+          course: f.course,
+          name: f.name,
+          finishers: finishers,
+          topAlgoScore: f.topScore,
+          topAlgoPick: f.topPick,
+          isSuccess: isSuccess
+        });
+      });
+    }
+    
+    const successCount = allRaces.filter(r => r.isSuccess).length;
+    const hitRate = allRaces.length > 0 ? Math.round((successCount / allRaces.length) * 100) : 0;
+    
     // Display summary
-    document.getElementById('analyzer-hit-rate').textContent = data.hitRate + '%';
-    document.getElementById('analyzer-failure-count').textContent = data.totalRaces;
+    document.getElementById('analyzer-hit-rate').textContent = hitRate + '%';
+    document.getElementById('analyzer-failure-count').textContent = allRaces.length;
     
     // Build weight controls
     const weightsControl = document.getElementById('analyzer-weights-controls');
@@ -2385,88 +2414,54 @@ async function loadAnalyzer() {
       </div>
     `).join('');
     
-    // Display patterns
-    if (data.failures && data.failures.length > 0) {
-      const patterns = {};
-      data.failures.forEach(f => {
-        if (f.reasons) {
-          f.reasons.forEach(r => {
-            patterns[r] = (patterns[r] || 0) + 1;
-          });
-        }
-      });
-      
-      const patternHtml = Object.entries(patterns)
-        .sort((a, b) => b[1] - a[1])
-        .map(([reason, count]) => 
-          `<div style="padding:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between">
-            <span>${reason}</span>
-            <strong>${count} races</strong>
-          </div>`
-        ).join('');
-      document.getElementById('analyzer-patterns').innerHTML = patternHtml || 'No patterns found';
-    }
+    // Hide patterns section
+    document.getElementById('analyzer-patterns')?.parentElement?.parentElement?.style.display = 'none';
     
-    // Display simple race results with algorithm scores
-    if (data.failures) {
-      const raceResults = [];
-      
-      // Build a race result for each failure (which is really just each race with a winner)
-      data.failures.forEach(f => {
-        if (!f.allRunners) return;
-        
-        // Sort by finish position
-        const finishers = f.allRunners
-          .filter(r => r.finish && r.finish <= 3)
-          .sort((a, b) => a.finish - b.finish);
-        
-        raceResults.push({
-          date: f.time,
-          week: f.week,
-          course: f.course,
-          name: f.name,
-          finishers: finishers,
-          topAlgoScore: f.topScore,
-          topAlgoPick: f.topPick,
-          allRunners: f.allRunners
-        });
-      });
-      
-      const resultsHtml = raceResults.slice(0, 10).map(race => {
-        // Parse date
-        let dateFormatted = 'Unknown date';
-        try {
-          if (typeof race.date === 'string' && race.date.includes('T')) {
-            const d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
+    // Build race-by-race results
+    const resultsHtml = allRaces.map(race => {
+      let dateFormatted = 'No date';
+      try {
+        if (typeof race.date === 'string' && race.date.includes('T')) {
+          const d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
+          if (!isNaN(d.getTime())) {
             dateFormatted = d.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric' });
           }
-        } catch(e) {}
-        
-        return `
-          <div style="padding:12px;border-bottom:1px solid var(--border);margin-bottom:10px;background:#fafafa;border-radius:6px">
-            <div style="font-weight:600;margin-bottom:2px">${race.course} — ${race.name}</div>
-            <div style="font-size:11px;color:#666;margin-bottom:8px">${dateFormatted}</div>
-            
-            <div style="margin-bottom:10px">
-              <div style="font-size:12px;font-weight:600;margin-bottom:6px">Actual Finishers:</div>
-              ${race.finishers.map(r => `
-                <div style="padding:6px 8px;margin-bottom:4px;background:${r.finish === 1 ? '#d4edda' : r.finish === 2 ? '#cfe2ff' : '#fff3cd'};border-radius:4px;display:flex;justify-content:space-between;align-items:center">
-                  <span><strong>#${r.finish}:</strong> ${r.horse}</span>
-                  <span style="color:#666;font-size:11px"><strong>Score: ${r.score}</strong></span>
-                </div>
-              `).join('')}
-            </div>
-            
-            <div style="padding:8px;background:#fff9e6;border-left:3px solid #ff9800;border-radius:4px;font-size:11px">
-              <div><strong>Algorithm's top pick:</strong> ${race.topAlgoPick}</div>
-              <div style="color:#666">Score: ${race.topAlgoScore}</div>
-            </div>
-          </div>
-        `;
-      }).join('');
+        }
+      } catch(e) {}
       
-      document.getElementById('analyzer-failures').innerHTML = resultsHtml || 'No races found';
-    }
+      const statusBg = race.isSuccess ? '#d4edda' : '#f8d7da';
+      const statusText = race.isSuccess ? '✓ SUCCESS' : '✗ MISS';
+      const statusColor = race.isSuccess ? '#155724' : '#721c24';
+      
+      return `
+        <div style="padding:12px;border-left:4px solid ${statusColor};margin-bottom:12px;background:#fafafa;border-radius:4px">
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+            <div>
+              <div style="font-weight:600;font-size:13px">${race.course} — ${race.name}</div>
+              <div style="font-size:11px;color:#666">${dateFormatted}</div>
+            </div>
+            <div style="background:${statusBg};color:${statusColor};padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600">${statusText}</div>
+          </div>
+          
+          <div style="margin-bottom:8px">
+            <div style="font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Actual Finishers:</div>
+            ${race.finishers.map(r => `
+              <div style="padding:6px 8px;margin-bottom:3px;background:${r.finish === 1 ? '#e8f5e9' : r.finish === 2 ? '#e3f2fd' : '#fffde7'};border-radius:3px;display:flex;justify-content:space-between;align-items:center;font-size:12px">
+                <span><strong>#${r.finish}:</strong> ${r.horse}</span>
+                <span style="color:#666"><strong>${r.score}</strong>pts</span>
+              </div>
+            `).join('')}
+          </div>
+          
+          <div style="padding:6px 8px;background:#fff3e0;border-left:2px solid #ff9800;border-radius:3px;font-size:11px">
+            <div><strong>Algorithm's top pick:</strong> ${race.topAlgoPick}</div>
+            <div style="color:#666"><strong>${race.topAlgoScore}</strong>pts</div>
+          </div>
+        </div>
+      `;
+    }).join('');
+    
+    document.getElementById('analyzer-failures').innerHTML = resultsHtml || 'No races found';
     
     loading.style.display = 'none';
     content.style.display = 'block';
