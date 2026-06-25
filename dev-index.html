@@ -2410,10 +2410,31 @@ async function loadAnalyzer() {
     // Display failures
     if (data.failures) {
       const failureHtml = data.failures.slice(0, 10).map((f, idx) => {
-        // Parse and format the date
-        const dateStr = f.time ? f.time.substring(0, 10) : f.week;
-        const date = new Date(dateStr);
-        const dateFormatted = date.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+        // Parse date - f.time might be Date object or ISO string
+        let dateFormatted = 'Unknown date';
+        try {
+          let dateStr = f.time;
+          // If it's a Date object converted to string, extract the date properly
+          if (typeof f.time === 'string') {
+            // Could be ISO format "2026-06-24T12:34:56.000Z" or serialized Date
+            if (f.time.includes('T')) {
+              dateStr = f.time.substring(0, 10); // Extract YYYY-MM-DD
+            } else if (f.time.includes('Dec') || f.time.includes('Jan')) {
+              // Already formatted, use as-is (will show old date but at least readable)
+              dateFormatted = f.time;
+              dateStr = null;
+            }
+          }
+          
+          if (dateStr) {
+            const date = new Date(dateStr + 'T00:00:00Z'); // Parse as UTC to avoid timezone issues
+            if (!isNaN(date.getTime())) {
+              dateFormatted = date.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+            }
+          }
+        } catch(e) {
+          dateFormatted = f.time ? String(f.time).substring(0, 25) : 'Unknown date';
+        }
         
         // Build allRunners drill-through
         const runnersHtml = f.allRunners ? 
