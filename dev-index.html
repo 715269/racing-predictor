@@ -2415,7 +2415,10 @@ async function loadAnalyzer() {
     `).join('');
     
     // Hide patterns section
-    document.getElementById('analyzer-patterns')?.parentElement?.parentElement?.style.display = 'none';
+    var patternsEl = document.getElementById('analyzer-patterns');
+    if (patternsEl && patternsEl.parentElement && patternsEl.parentElement.parentElement) {
+      patternsEl.parentElement.parentElement.style.display = 'none';
+    }
     
     // Build race-by-race results
     const resultsHtml = allRaces.map(race => {
