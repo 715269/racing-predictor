@@ -2378,10 +2378,11 @@ async function loadAnalyzer() {
         }
         finishers.sort(function(a, b) { return a.finish - b.finish; });
         
-        // Check success
+        // Check success: did algorithm's TOP PICK finish in top 3?
         var isSuccess = false;
-        for (var k = 0; k < finishers.length; k++) {
-          if (finishers[k].isWinner) {
+        for (var k = 0; k < f.allRunners.length; k++) {
+          var runner = f.allRunners[k];
+          if (runner.horse === f.topPick && runner.finish && runner.finish <= 3) {
             isSuccess = true;
             break;
           }
