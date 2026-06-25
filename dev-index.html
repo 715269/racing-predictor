@@ -2407,68 +2407,65 @@ async function loadAnalyzer() {
       document.getElementById('analyzer-patterns').innerHTML = patternHtml || 'No patterns found';
     }
     
-    // Display failures
+    // Display simple race results with algorithm scores
     if (data.failures) {
-      const failureHtml = data.failures.slice(0, 10).map((f, idx) => {
-        // Parse date - f.time might be Date object or ISO string
+      const raceResults = [];
+      
+      // Build a race result for each failure (which is really just each race with a winner)
+      data.failures.forEach(f => {
+        if (!f.allRunners) return;
+        
+        // Sort by finish position
+        const finishers = f.allRunners
+          .filter(r => r.finish && r.finish <= 3)
+          .sort((a, b) => a.finish - b.finish);
+        
+        raceResults.push({
+          date: f.time,
+          week: f.week,
+          course: f.course,
+          name: f.name,
+          finishers: finishers,
+          topAlgoScore: f.topScore,
+          topAlgoPick: f.topPick,
+          allRunners: f.allRunners
+        });
+      });
+      
+      const resultsHtml = raceResults.slice(0, 10).map(race => {
+        // Parse date
         let dateFormatted = 'Unknown date';
         try {
-          let dateStr = f.time;
-          // If it's a Date object converted to string, extract the date properly
-          if (typeof f.time === 'string') {
-            // Could be ISO format "2026-06-24T12:34:56.000Z" or serialized Date
-            if (f.time.includes('T')) {
-              dateStr = f.time.substring(0, 10); // Extract YYYY-MM-DD
-            } else if (f.time.includes('Dec') || f.time.includes('Jan')) {
-              // Already formatted, use as-is (will show old date but at least readable)
-              dateFormatted = f.time;
-              dateStr = null;
-            }
+          if (typeof race.date === 'string' && race.date.includes('T')) {
+            const d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
+            dateFormatted = d.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric' });
           }
-          
-          if (dateStr) {
-            const date = new Date(dateStr + 'T00:00:00Z'); // Parse as UTC to avoid timezone issues
-            if (!isNaN(date.getTime())) {
-              dateFormatted = date.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
-            }
-          }
-        } catch(e) {
-          dateFormatted = f.time ? String(f.time).substring(0, 25) : 'Unknown date';
-        }
-        
-        // Build allRunners drill-through
-        const runnersHtml = f.allRunners ? 
-          f.allRunners.map(r => `
-            <div style="padding:6px 8px;border-left:2px solid ${r.isWinner ? '#4caf50' : '#ddd'};margin-bottom:4px;background:${r.isWinner ? '#f0f8f0' : '#f9f9f9'}">
-              <div style="font-weight:${r.isWinner ? '600' : '400'}">${r.horse}</div>
-              <div style="font-size:11px;color:#666">Score: ${r.score} • Finish: ${r.finish}</div>
-            </div>
-          `).join('')
-          : '';
+        } catch(e) {}
         
         return `
-          <div style="padding:10px;border-bottom:1px solid var(--border);margin-bottom:8px">
-            <div style="font-weight:600;margin-bottom:4px">${dateFormatted}</div>
-            <div style="font-size:12px;color:var(--text-muted);margin-bottom:4px">
-              Week ${f.week} — ${f.course} — ${f.name}
+          <div style="padding:12px;border-bottom:1px solid var(--border);margin-bottom:10px;background:#fafafa;border-radius:6px">
+            <div style="font-weight:600;margin-bottom:2px">${race.course} — ${race.name}</div>
+            <div style="font-size:11px;color:#666;margin-bottom:8px">${dateFormatted}</div>
+            
+            <div style="margin-bottom:10px">
+              <div style="font-size:12px;font-weight:600;margin-bottom:6px">Actual Finishers:</div>
+              ${race.finishers.map(r => `
+                <div style="padding:6px 8px;margin-bottom:4px;background:${r.finish === 1 ? '#d4edda' : r.finish === 2 ? '#cfe2ff' : '#fff3cd'};border-radius:4px;display:flex;justify-content:space-between;align-items:center">
+                  <span><strong>#${r.finish}:</strong> ${r.horse}</span>
+                  <span style="color:#666;font-size:11px"><strong>Score: ${r.score}</strong></span>
+                </div>
+              `).join('')}
             </div>
-            <div style="background:var(--green-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
-              <strong>Winner:</strong> ${f.winner} (${f.winnerScore}pts, ranked #${f.winnerRank})
+            
+            <div style="padding:8px;background:#fff9e6;border-left:3px solid #ff9800;border-radius:4px;font-size:11px">
+              <div><strong>Algorithm's top pick:</strong> ${race.topAlgoPick}</div>
+              <div style="color:#666">Score: ${race.topAlgoScore}</div>
             </div>
-            <div style="background:var(--amber-light);padding:8px;border-radius:6px;margin-bottom:6px;font-size:12px">
-              <strong>Top pick:</strong> ${f.topPick} (${f.topScore}pts) — <strong>Gap: ${f.scoreDiff}pts</strong>
-            </div>
-            ${f.reasons ? '<div style="font-size:11px;color:#666;margin-bottom:8px">' + f.reasons.join(' • ') + '</div>' : ''}
-            <details style="font-size:11px">
-              <summary style="cursor:pointer;color:#0066cc;font-weight:500;margin-bottom:6px">📊 All runners (${f.allRunners ? f.allRunners.length : 0})</summary>
-              <div style="background:#f5f5f5;padding:8px;border-radius:4px;margin-top:6px">
-                ${runnersHtml}
-              </div>
-            </details>
           </div>
         `;
       }).join('');
-      document.getElementById('analyzer-failures').innerHTML = failureHtml || 'No failures found';
+      
+      document.getElementById('analyzer-failures').innerHTML = resultsHtml || 'No races found';
     }
     
     loading.style.display = 'none';
