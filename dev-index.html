@@ -2347,33 +2347,45 @@ function renderScoreBar(score, max, color) {
 
 // Load and display analyzer data when tab is opened
 async function loadAnalyzer() {
-  const content = document.getElementById('analyzer-content');
-  const loading = document.getElementById('analyzer-loading');
-  const error = document.getElementById('analyzer-error');
+  var content = document.getElementById('analyzer-content');
+  var loading = document.getElementById('analyzer-loading');
+  var error = document.getElementById('analyzer-error');
   
   loading.style.display = 'block';
   content.style.display = 'none';
   error.style.display = 'none';
   
   try {
-    const res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
-    const data = await res.json();
+    var res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
+    var data = await res.json();
     
     if (data.error) throw new Error(data.error);
     
-    // Build all races (successes + failures)
-    const allRaces = [];
-    
-    if (data.failures && Array.isArray(data.failures)) {
-      data.failures.forEach(f => {
-        if (!f.allRunners) return;
+    // Build all races
+    var allRaces = [];
+    if (data.failures) {
+      for (var i = 0; i < data.failures.length; i++) {
+        var f = data.failures[i];
+        if (!f.allRunners) continue;
         
-        // Check if this was a success (winner in top 3)
-        const finishers = f.allRunners
-          .filter(r => r.finish && r.finish <= 3)
-          .sort((a, b) => a.finish - b.finish);
+        // Get finishers
+        var finishers = [];
+        for (var j = 0; j < f.allRunners.length; j++) {
+          var r = f.allRunners[j];
+          if (r.finish && r.finish <= 3) {
+            finishers.push(r);
+          }
+        }
+        finishers.sort(function(a, b) { return a.finish - b.finish; });
         
-        const isSuccess = finishers.some(r => r.isWinner);
+        // Check success
+        var isSuccess = false;
+        for (var k = 0; k < finishers.length; k++) {
+          if (finishers[k].isWinner) {
+            isSuccess = true;
+            break;
+          }
+        }
         
         allRaces.push({
           date: f.time,
@@ -2384,79 +2396,61 @@ async function loadAnalyzer() {
           topAlgoPick: f.topPick,
           isSuccess: isSuccess
         });
-      });
+      }
     }
     
-    const successCount = allRaces.filter(r => r.isSuccess).length;
-    const hitRate = allRaces.length > 0 ? Math.round((successCount / allRaces.length) * 100) : 0;
+    var successCount = 0;
+    for (var i = 0; i < allRaces.length; i++) {
+      if (allRaces[i].isSuccess) successCount++;
+    }
+    var hitRate = allRaces.length > 0 ? Math.round((successCount / allRaces.length) * 100) : 0;
     
-    // Display summary
     document.getElementById('analyzer-hit-rate').textContent = hitRate + '%';
     document.getElementById('analyzer-failure-count').textContent = allRaces.length;
     
-    // Build weight controls
-    const weightsControl = document.getElementById('analyzer-weights-controls');
-    const weights = {
-      form_weight: { label: 'Form', current: 15 },
-      freshness_weight: { label: 'Freshness', current: 4 },
-      or_weight: { label: 'OR', current: 10 },
-      draw_weight: { label: 'Draw', current: 3 },
-      weight_weight: { label: 'Weight', current: 5 },
-      trainer_weight: { label: 'Trainer', current: 5 },
-      jockey_weight: { label: 'Jockey', current: 5 },
-      cd_weight: { label: 'C&D', current: 3 }
-    };
-    
-    weightsControl.innerHTML = Object.entries(weights).map(([key, val]) => `
-      <div>
-        <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">${val.label}</label>
-        <input type="number" id="${key}" value="${val.current}" min="0" max="20" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:6px">
-      </div>
-    `).join('');
-    
-    // Build race-by-race results
-    const resultsHtml = allRaces.map(race => {
-      let dateFormatted = 'No date';
+    // Build results HTML
+    var resultsHtml = '';
+    for (var i = 0; i < allRaces.length; i++) {
+      var race = allRaces[i];
+      var dateFormatted = 'No date';
       try {
-        if (typeof race.date === 'string' && race.date.includes('T')) {
-          const d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
+        if (typeof race.date === 'string' && race.date.indexOf('T') > -1) {
+          var d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
           if (!isNaN(d.getTime())) {
             dateFormatted = d.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric' });
           }
         }
       } catch(e) {}
       
-      const statusBg = race.isSuccess ? '#d4edda' : '#f8d7da';
-      const statusText = race.isSuccess ? '✓ SUCCESS' : '✗ MISS';
-      const statusColor = race.isSuccess ? '#155724' : '#721c24';
+      var statusBg = race.isSuccess ? '#d4edda' : '#f8d7da';
+      var statusText = race.isSuccess ? '✓ SUCCESS' : '✗ MISS';
+      var statusColor = race.isSuccess ? '#155724' : '#721c24';
       
-      return `
-        <div style="padding:12px;border-left:4px solid ${statusColor};margin-bottom:12px;background:#fafafa;border-radius:4px">
-          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
-            <div>
-              <div style="font-weight:600;font-size:13px">${race.course} — ${race.name}</div>
-              <div style="font-size:11px;color:#666">${dateFormatted}</div>
-            </div>
-            <div style="background:${statusBg};color:${statusColor};padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600">${statusText}</div>
-          </div>
-          
-          <div style="margin-bottom:8px">
-            <div style="font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Actual Finishers:</div>
-            ${race.finishers.map(r => `
-              <div style="padding:6px 8px;margin-bottom:3px;background:${r.finish === 1 ? '#e8f5e9' : r.finish === 2 ? '#e3f2fd' : '#fffde7'};border-radius:3px;display:flex;justify-content:space-between;align-items:center;font-size:12px">
-                <span><strong>#${r.finish}:</strong> ${r.horse}</span>
-                <span style="color:#666"><strong>${r.score}</strong>pts</span>
-              </div>
-            `).join('')}
-          </div>
-          
-          <div style="padding:6px 8px;background:#fff3e0;border-left:2px solid #ff9800;border-radius:3px;font-size:11px">
-            <div><strong>Algorithm's top pick:</strong> ${race.topAlgoPick}</div>
-            <div style="color:#666"><strong>${race.topAlgoScore}</strong>pts</div>
-          </div>
-        </div>
-      `;
-    }).join('');
+      var finishersHtml = '';
+      for (var j = 0; j < race.finishers.length; j++) {
+        var fin = race.finishers[j];
+        var finBg = fin.finish === 1 ? '#e8f5e9' : fin.finish === 2 ? '#e3f2fd' : '#fffde7';
+        finishersHtml += '<div style="padding:6px 8px;margin-bottom:3px;background:' + finBg + ';border-radius:3px;display:flex;justify-content:space-between;align-items:center;font-size:12px">' +
+          '<span><strong>#' + fin.finish + ':</strong> ' + fin.horse + '</span>' +
+          '<span style="color:#666"><strong>' + fin.score + '</strong>pts</span>' +
+          '</div>';
+      }
+      
+      resultsHtml += '<div style="padding:12px;border-left:4px solid ' + statusColor + ';margin-bottom:12px;background:#fafafa;border-radius:4px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">' +
+        '<div><div style="font-weight:600;font-size:13px">' + race.course + ' — ' + race.name + '</div>' +
+        '<div style="font-size:11px;color:#666">' + dateFormatted + '</div></div>' +
+        '<div style="background:' + statusBg + ';color:' + statusColor + ';padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600">' + statusText + '</div>' +
+        '</div>' +
+        '<div style="margin-bottom:8px">' +
+        '<div style="font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Actual Finishers:</div>' +
+        finishersHtml +
+        '</div>' +
+        '<div style="padding:6px 8px;background:#fff3e0;border-left:2px solid #ff9800;border-radius:3px;font-size:11px">' +
+        '<div><strong>Algorithm\'s top pick:</strong> ' + race.topAlgoPick + '</div>' +
+        '<div style="color:#666"><strong>' + race.topAlgoScore + '</strong>pts</div>' +
+        '</div></div>';
+    }
     
     document.getElementById('analyzer-failures').innerHTML = resultsHtml || 'No races found';
     
@@ -2465,7 +2459,7 @@ async function loadAnalyzer() {
   } catch(e) {
     loading.style.display = 'none';
     error.style.display = 'block';
-    error.textContent = 'Error loading analysis: ' + e.message;
+    error.textContent = 'Error: ' + e.message;
   }
 }
 
