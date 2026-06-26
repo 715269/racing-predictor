@@ -702,10 +702,9 @@ async function loadRaces() {
       console.log('getweekraces failed:', e);
     }
 
-    if (weekData.raceids && weekData.raceids.length > 0) {
-      // Admin has already set the race IDs — match against today's full race data
-      races = allRaces.filter(r => weekData.raceids.includes(r.race_id));
-      if (races.length === 0) races = allRaces; // fallback
+    if (weekData.races && weekData.races.length > 0) {
+      // Admin has already set races — use them directly (they have full details)
+      races = weekData.races;
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
