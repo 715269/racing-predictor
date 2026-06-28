@@ -432,11 +432,13 @@
 // CONFIGURATION — update this URL after deploying Apps Script
 // =============================================
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxxrGUwDRJkM8HwfaEdRJBehb-qxo4vg02IA6hx2ZyszO_TSY0-kI_h5uTPlX63CRSglA/exec';
+const ENV = 'LIVE';
+const storageKey = (key) => `${ENV}_${key}`;
 
 // =============================================
 // STATE
 // =============================================
-let currentPlayer = localStorage.getItem('racing_player') || null;
+let currentPlayer = localStorage.getItem(storageKey('racing_player')) || null;
 let allRaces = [];        // all races from API
 let races = [];           // filtered to ITV courses
 let runners = {};         // race_id -> runners array
@@ -477,6 +479,7 @@ function showPage(name) {
   if (name === 'results') loadResults();
   if (name === 'leaderboard') loadLeaderboard();
   if (name === 'admin') initAdminTab();
+  if (name === 'analyzer') loadAnalyzer();
 }
 
 // =============================================
@@ -686,12 +689,8 @@ async function loadRaces() {
       }
     });
 
-    // Load any existing picks from localStorage
-    // const saved = localStorage.getItem('racing_picks_' + weekNumber);
-    // if (saved) {
-    //   picks = JSON.parse(saved);
-    //  submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
-    /}
+    // Do not hydrate picks from shared browser localStorage here.
+    // Submitted picks are pulled from the Live sheet after a player is selected.
 
     // Check Sheet for this week's admin-selected races
     let weekData = {};
@@ -705,12 +704,16 @@ async function loadRaces() {
     if (weekData.raceids && weekData.raceids.length > 0) {
       // Admin has already set the race IDs — match against today's full race data
       races = allRaces.filter(r => weekData.raceids.includes(r.race_id));
-      if (races.length === 0) races = allRaces; // fallback
+
+      if (races.length === 0) {
+        showNotice('picks', 'Saved races were found for this week, but they are not in today\'s racecard feed. They may be from another date.', 'warning');
+        return;
+      }
+
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
       // No races set yet for this week
-      // Only show course filter on a Saturday (day 6) or if there are UK races
       const today = new Date();
       const isSaturday = today.getDay() === 6;
       if (isSaturday) {
@@ -730,7 +733,7 @@ async function loadRaces() {
 // =============================================
 async function selectPlayer(name, silent) {
   currentPlayer = name;
-  localStorage.setItem('racing_player', name);
+  localStorage.setItem(storageKey('racing_player'), name);
 
   document.querySelectorAll('.player-btn').forEach(b => {
     b.classList.toggle('selected', b.textContent.replace('✓','').trim() === name);
@@ -759,8 +762,8 @@ async function selectPlayer(name, silent) {
           submittedPicks[name][p.race_id] = true;
         }
       });
-      localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
-      localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+      localStorage.setItem(storageKey('racing_picks_' + weekNumber), JSON.stringify(picks));
+      localStorage.setItem(storageKey('racing_submitted_' + weekNumber), JSON.stringify(submittedPicks));
     }
   } catch(e) {
     // If fetch fails, fall back to whatever's in localStorage
@@ -774,7 +777,7 @@ async function selectPlayer(name, silent) {
 
 function clearPlayer() {
   currentPlayer = null;
-  localStorage.removeItem('racing_player');
+  localStorage.removeItem(storageKey('racing_player'));
   document.querySelectorAll('.player-btn').forEach(b => b.classList.remove('selected'));
   document.getElementById('step-player').style.display = 'block';
   document.getElementById('step-races').style.display = 'none';
@@ -1049,7 +1052,7 @@ function selectRunnerCard(raceId, horseName, course, time, raceName, el) {
   // Update picks state
   if (!picks[currentPlayer]) picks[currentPlayer] = {};
   picks[currentPlayer][raceId] = horseName;
-  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  localStorage.setItem(storageKey('racing_picks_' + weekNumber), JSON.stringify(picks));
 
   // Re-render the picker to show selection
   const race = races.find(r => r.race_id === raceId);
@@ -1071,7 +1074,7 @@ function savePick(raceId, course, time, name) {
   if (!sel || !sel.value) return;
   if (!picks[currentPlayer]) picks[currentPlayer] = {};
   picks[currentPlayer][raceId] = sel.value;
-  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  localStorage.setItem(storageKey('racing_picks_' + weekNumber), JSON.stringify(picks));
   renderRaceTabs();
   showRace(currentRaceIdx);
   renderPicksSummary();
@@ -1134,8 +1137,8 @@ async function submitPick(raceId, course, time, name) {
     picks[currentPlayer][raceId] = horse;
     if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
     submittedPicks[currentPlayer][raceId] = true;
-    localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
-    localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+    localStorage.setItem(storageKey('racing_picks_' + weekNumber), JSON.stringify(picks));
+    localStorage.setItem(storageKey('racing_submitted_' + weekNumber), JSON.stringify(submittedPicks));
     renderRaceTabs();
     showRace(currentRaceIdx);
     renderPicksSummary();
@@ -1221,7 +1224,7 @@ async function submitPickDirect(raceId, course, time, name, horse) {
     if (!data.error) {
       if (!submittedPicks[currentPlayer]) submittedPicks[currentPlayer] = {};
       submittedPicks[currentPlayer][raceId] = true;
-      localStorage.setItem('racing_submitted_' + weekNumber, JSON.stringify(submittedPicks));
+      localStorage.setItem(storageKey('racing_submitted_' + weekNumber), JSON.stringify(submittedPicks));
     }
   } catch(e) {}
 }
@@ -1822,7 +1825,7 @@ function saveManualPick(raceId, course, time, name) {
   picks[currentPlayer][raceId] = inp.value.trim().toUpperCase();
   // Store a fake runner so submit works
   if (!runners[raceId]) runners[raceId] = [{ name: inp.value.trim().toUpperCase(), number:'', jockey:'', is_nr:false }];
-  localStorage.setItem('racing_picks_' + weekNumber, JSON.stringify(picks));
+  localStorage.setItem(storageKey('racing_picks_' + weekNumber), JSON.stringify(picks));
   renderRaceTabs();
   showRace(currentRaceIdx);
   renderPicksSummary();
