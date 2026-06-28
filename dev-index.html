@@ -447,12 +447,6 @@ let submittedPicks = {};  // player -> race_id -> true
 let currentRaceIdx = 0;
 let weekNumber = getWeekNumber();
 
-function clearEnvironmentStorage() {
-  Object.keys(localStorage).forEach(key => {
-    if (key.startsWith(ENV + '_racing_')) localStorage.removeItem(key);
-  });
-}
-
 // =============================================
 // INIT
 // =============================================
@@ -711,14 +705,19 @@ async function loadRaces() {
       console.log('getweekraces failed:', e);
     }
 
-    if (weekData.races && weekData.races.length > 0) {
-      // Admin has already set races — use them directly (they have full details)
-      races = weekData.races;
+    if (weekData.raceids && weekData.raceids.length > 0) {
+      // Admin has already set races — backend returns race IDs, so match them to today's racecards
+      races = allRaces.filter(r => weekData.raceids.includes(r.race_id));
+
+      if (races.length === 0) {
+        showNotice('picks', 'Saved races were found for this week, but they are not in today\'s racecard feed. They may be from another date.', 'warning');
+        return;
+      }
+
       document.getElementById('step-player').style.display = 'block';
       if (currentPlayer) selectPlayer(currentPlayer, true);
     } else {
       // No races set yet for this week
-      // Only show course filter on a Saturday (day 6) or if there are UK races
       const today = new Date();
       const isSaturday = today.getDay() === 6;
       if (isSaturday) {
