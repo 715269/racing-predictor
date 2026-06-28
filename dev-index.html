@@ -2345,10 +2345,157 @@ function renderScoreBar(score, max, color) {
 // ALGORITHM ANALYZER
 // =============================================
 
-async function loadAnalyzer() {
+const ANALYZER_DEFAULT_WEIGHTS = {
+  form_weight: ['Form', 15],
+  freshness_weight: ['Freshness', 4],
+  or_weight: ['OR', 10],
+  draw_weight: ['Draw', 3],
+  weight_weight: ['Weight', 5],
+  trainer_weight: ['Trainer', 5],
+  jockey_weight: ['Jockey', 5],
+  cd_weight: ['C&D', 3]
+};
+
+let analyzerLoaded = false;
+
+function analyzerGetWeights() {
+  const params = {};
+  Object.entries(ANALYZER_DEFAULT_WEIGHTS).forEach(([id, meta]) => {
+    const el = document.getElementById(id);
+    params[id] = el ? el.value : meta[1];
+  });
+  return params;
+}
+
+function analyzerWeightInputsHtml() {
+  return Object.entries(ANALYZER_DEFAULT_WEIGHTS).map(([id, w]) => `
+    <div>
+      <label>${w[0]}</label>
+      <input id="${id}" type="number" step="0.5" min="0" max="30" value="${w[1]}"
+        style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+    </div>
+  `).join('');
+}
+
+function analyzerSetWeights(weights) {
+  const mapping = {
+    form: 'form_weight',
+    freshness: 'freshness_weight',
+    or: 'or_weight',
+    draw: 'draw_weight',
+    weight: 'weight_weight',
+    trainer: 'trainer_weight',
+    jockey: 'jockey_weight',
+    cd: 'cd_weight'
+  };
+  Object.entries(mapping).forEach(([key, id]) => {
+    const el = document.getElementById(id);
+    if (el && weights && weights[key] !== undefined) el.value = weights[key];
+  });
+}
+
+function factorComparisonHtml(f) {
+  const labels = [
+    ['form', 'Form'],
+    ['freshness', 'Fresh'],
+    ['or', 'OR'],
+    ['draw', 'Draw'],
+    ['weight', 'Weight'],
+    ['trainer', 'Trainer'],
+    ['jockey', 'Jockey'],
+    ['cd', 'C&D']
+  ];
+
+  const winner = f.winnerFactors || f.factors || {};
+  const top = f.topPickFactors || {};
+
+  return `
+    <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:11px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:4px;border-bottom:1px solid var(--border)">Factor</th>
+          <th style="text-align:right;padding:4px;border-bottom:1px solid var(--border)">Winner</th>
+          <th style="text-align:right;padding:4px;border-bottom:1px solid var(--border)">Top pick</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${labels.map(([key, label]) => {
+          const w = Number(winner[key] || 0);
+          const t = Number(top[key] || 0);
+          const stronger = w > t ? 'color:var(--green);font-weight:700' : '';
+          return `<tr>
+            <td style="padding:4px;border-bottom:1px solid var(--border)">${label}</td>
+            <td style="padding:4px;text-align:right;border-bottom:1px solid var(--border);${stronger}">${w}</td>
+            <td style="padding:4px;text-align:right;border-bottom:1px solid var(--border)">${t}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderAnalyzerData(data) {
+  document.getElementById('analyzer-hit-rate').textContent = (data.hitRate || 0) + '%';
+  document.getElementById('analyzer-failure-count').textContent = data.totalRaces || 0;
+
+  const weightsControl = document.getElementById('analyzer-weights-controls');
+  if (!weightsControl.innerHTML.trim()) {
+    weightsControl.innerHTML = analyzerWeightInputsHtml() + `
+      <button class="btn btn-outline btn-full" style="grid-column:1 / -1;margin-top:4px"
+        onclick="findBetterWeights()" id="analyzer-optimize-btn">
+        Find Better Weights
+      </button>
+    `;
+  }
+
+  const reasonCounts = {};
+  (data.failures || []).forEach(f => {
+    (f.reasons || []).forEach(r => {
+      reasonCounts[r] = (reasonCounts[r] || 0) + 1;
+    });
+  });
+
+  document.getElementById('analyzer-patterns').innerHTML =
+    Object.keys(reasonCounts).length
+      ? Object.entries(reasonCounts).sort((a,b) => b[1] - a[1]).map(([r, c]) =>
+          `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
+             <strong>${r}</strong>: ${c}
+           </div>`
+        ).join('')
+      : '<p class="text-muted">No failure patterns found.</p>';
+
+  document.getElementById('analyzer-failures').innerHTML =
+    (data.failures || []).map(f => `
+      <div style="padding:12px;border-bottom:1px solid var(--border)">
+        <div style="font-weight:600;font-size:14px">
+          <strong>${f.course}</strong> — ${f.name || ''}
+        </div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+          Winner: <strong>${f.winner}</strong> ranked ${f.winnerRank} with ${f.winnerScore} pts
+        </div>
+        <div style="font-size:12px;color:var(--text-muted)">
+          Top pick: <strong>${f.topPick}</strong> with ${f.topScore} pts
+        </div>
+        <div style="font-size:12px;color:var(--amber);margin-top:4px">
+          Score gap: ${f.scoreDiff} pts
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+          ${(f.reasons || []).join(' • ')}
+        </div>
+        ${factorComparisonHtml(f)}
+      </div>
+    `).join('') || '<p class="text-muted">No failures found.</p>';
+}
+
+async function loadAnalyzer(forceReload) {
   const content = document.getElementById('analyzer-content');
   const loading = document.getElementById('analyzer-loading');
   const error = document.getElementById('analyzer-error');
+
+  if (analyzerLoaded && !forceReload) {
+    content.style.display = 'block';
+    return;
+  }
 
   loading.style.display = 'block';
   content.style.display = 'none';
@@ -2360,72 +2507,70 @@ async function loadAnalyzer() {
 
     if (data.error) throw new Error(data.error);
 
-    document.getElementById('analyzer-hit-rate').textContent = (data.hitRate || 0) + '%';
-    document.getElementById('analyzer-failure-count').textContent = data.totalRaces || 0;
-
-    // Build weight controls. These must exist before testWeights() is clicked.
-    const weightsControl = document.getElementById('analyzer-weights-controls');
-    const weights = {
-      form_weight: ['Form', 15],
-      freshness_weight: ['Freshness', 4],
-      or_weight: ['OR', 10],
-      draw_weight: ['Draw', 3],
-      weight_weight: ['Weight', 5],
-      trainer_weight: ['Trainer', 5],
-      jockey_weight: ['Jockey', 5],
-      cd_weight: ['C&D', 3]
-    };
-
-    weightsControl.innerHTML = Object.entries(weights).map(([id, w]) => `
-      <div>
-        <label>${w[0]}</label>
-        <input id="${id}" type="number" value="${w[1]}" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
-      </div>
-    `).join('');
-
-    // Failure pattern counts
-    const reasonCounts = {};
-    (data.failures || []).forEach(f => {
-      (f.reasons || []).forEach(r => {
-        reasonCounts[r] = (reasonCounts[r] || 0) + 1;
-      });
-    });
-
-    document.getElementById('analyzer-patterns').innerHTML =
-      Object.keys(reasonCounts).length
-        ? Object.entries(reasonCounts).map(([r, c]) =>
-            `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>${r}</strong>: ${c}</div>`
-          ).join('')
-        : '<p class="text-muted">No failure patterns found.</p>';
-
-    // Failure list
-    document.getElementById('analyzer-failures').innerHTML =
-      (data.failures || []).map(f => `
-        <div style="padding:10px;border-bottom:1px solid var(--border)">
-          <div style="font-weight:600;font-size:14px"><strong>${f.course}</strong> — ${f.name || ''}</div>
-          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
-            Winner: <strong>${f.winner}</strong> ranked ${f.winnerRank} with ${f.winnerScore} pts
-          </div>
-          <div style="font-size:12px;color:var(--text-muted)">
-            Top pick: <strong>${f.topPick}</strong> with ${f.topScore} pts
-          </div>
-          <div style="font-size:12px;color:var(--amber);margin-top:4px">
-            Score gap: ${f.scoreDiff} pts
-          </div>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
-            ${(f.reasons || []).join(' • ')}
-          </div>
-        </div>
-      `).join('') || '<p class="text-muted">No failures found.</p>';
+    renderAnalyzerData(data);
 
     loading.style.display = 'none';
     content.style.display = 'block';
+    analyzerLoaded = true;
 
   } catch(e) {
     loading.style.display = 'none';
     error.style.display = 'block';
     error.textContent = 'Error: ' + e.message;
   }
+}
+
+function renderWeightTestResult(data, mode) {
+  const result = document.getElementById('analyzer-test-result');
+
+  if (data.error) {
+    result.textContent = 'Error: ' + data.error;
+    result.style.display = 'block';
+    return;
+  }
+
+  const isBetter = Number(data.deltaHits || 0) > 0 || Number(data.deltaRate || 0) > 0;
+  const isWorse = Number(data.deltaHits || 0) < 0 || Number(data.deltaRate || 0) < 0;
+  const headline = mode === 'optimize'
+    ? 'Best weights found'
+    : 'Weight test result';
+
+  const changeText = data.deltaHits === 0
+    ? 'No change'
+    : `${data.deltaHits > 0 ? '+' : ''}${data.deltaHits} race${Math.abs(data.deltaHits) === 1 ? '' : 's'}`;
+
+  result.innerHTML = `
+    <div style="font-weight:700;margin-bottom:6px">${headline}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <div style="font-size:11px;color:var(--text-muted)">Current</div>
+        <div style="font-size:18px;font-weight:700">${data.currentHits}/${data.totalRaces} (${data.currentHitRate}%)</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--text-muted)">${mode === 'optimize' ? 'Best' : 'New'}</div>
+        <div style="font-size:18px;font-weight:700;${isBetter ? 'color:var(--green)' : isWorse ? 'color:var(--red)' : ''}">
+          ${(data.hitsWithNewWeights !== undefined ? data.hitsWithNewWeights : data.bestHits)}/${data.totalRaces}
+          (${data.newHitRate || data.bestHitRate}%)
+        </div>
+      </div>
+    </div>
+    <div style="font-size:13px;${isBetter ? 'color:var(--green)' : isWorse ? 'color:var(--red)' : 'color:var(--text-muted)'}">
+      Change: ${changeText} (${data.deltaRate > 0 ? '+' : ''}${data.deltaRate}%)
+    </div>
+    ${(data.changes && data.changes.length) ? `
+      <div style="margin-top:10px;font-size:12px">
+        <strong>Changed races:</strong>
+        ${data.changes.slice(0, 6).map(c => `
+          <div style="padding:6px 0;border-top:1px solid var(--border)">
+            ${c.course} — Winner: <strong>${c.winner}</strong><br>
+            Old top: ${c.oldTopPick} → New top: <strong>${c.newTopPick}</strong><br>
+            Winner rank: ${c.oldWinnerRank} → ${c.newWinnerRank}
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+  result.style.display = 'block';
 }
 
 async function testWeights() {
@@ -2436,32 +2581,10 @@ async function testWeights() {
   result.style.display = 'none';
 
   try {
-    const getVal = (id, fallback) => {
-      const el = document.getElementById(id);
-      return el ? el.value : fallback;
-    };
-
-    const params = new URLSearchParams({
-      action: 'testwweights',
-      form_weight: getVal('form_weight', 15),
-      freshness_weight: getVal('freshness_weight', 4),
-      or_weight: getVal('or_weight', 10),
-      draw_weight: getVal('draw_weight', 3),
-      weight_weight: getVal('weight_weight', 5),
-      trainer_weight: getVal('trainer_weight', 5),
-      jockey_weight: getVal('jockey_weight', 5),
-      cd_weight: getVal('cd_weight', 3)
-    });
-
+    const params = new URLSearchParams(Object.assign({ action: 'testwweights' }, analyzerGetWeights()));
     const res = await fetch(SCRIPT_URL + '?' + params.toString());
     const data = await res.json();
-
-    result.textContent = data.error
-      ? 'Error: ' + data.error
-      : `With new weights: ${data.hitsWithNewWeights} races hit (${data.newHitRate}%)`;
-
-    result.style.display = 'block';
-
+    renderWeightTestResult(data, 'test');
   } catch(e) {
     result.textContent = 'Error: ' + e.message;
     result.style.display = 'block';
@@ -2470,14 +2593,30 @@ async function testWeights() {
   }
 }
 
-// Intercept showPage to load analyzer on first open
-const originalShowPage = window.showPage;
-window.showPage = function(name) {
-  originalShowPage(name);
-  if (name === 'analyzer') {
-    loadAnalyzer();
+async function findBetterWeights() {
+  const btn = document.getElementById('analyzer-optimize-btn');
+  const result = document.getElementById('analyzer-test-result');
+
+  btn.disabled = true;
+  btn.textContent = 'Searching...';
+  result.style.display = 'none';
+
+  try {
+    const params = new URLSearchParams(Object.assign({ action: 'optimizeweights' }, analyzerGetWeights()));
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
+    const data = await res.json();
+
+    if (data.weights) analyzerSetWeights(data.weights);
+    renderWeightTestResult(data, 'optimize');
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+    result.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Find Better Weights';
   }
-};
+}
+
 </script>
 </body>
 </html>
