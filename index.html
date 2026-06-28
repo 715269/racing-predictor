@@ -687,11 +687,11 @@ async function loadRaces() {
     });
 
     // Load any existing picks from localStorage
-    const saved = localStorage.getItem('racing_picks_' + weekNumber);
-    if (saved) {
-      picks = JSON.parse(saved);
-      submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
-    }
+    // const saved = localStorage.getItem('racing_picks_' + weekNumber);
+    // if (saved) {
+    //   picks = JSON.parse(saved);
+    //  submittedPicks = JSON.parse(localStorage.getItem('racing_submitted_' + weekNumber) || '{}');
+    /}
 
     // Check Sheet for this week's admin-selected races
     let weekData = {};
