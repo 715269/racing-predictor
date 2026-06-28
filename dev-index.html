@@ -2344,118 +2344,82 @@ function renderScoreBar(score, max, color) {
 // ALGORITHM ANALYZER
 // =============================================
 
-// Load and display analyzer data when tab is opened
 async function loadAnalyzer() {
-  var content = document.getElementById('analyzer-content');
-  var loading = document.getElementById('analyzer-loading');
-  var error = document.getElementById('analyzer-error');
-  
+  const content = document.getElementById('analyzer-content');
+  const loading = document.getElementById('analyzer-loading');
+  const error = document.getElementById('analyzer-error');
+
   loading.style.display = 'block';
   content.style.display = 'none';
   error.style.display = 'none';
-  
+
   try {
-    var res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
-    var data = await res.json();
-    
+    const res = await fetch(SCRIPT_URL + '?action=getfailureanalysis');
+    const data = await res.json();
+
     if (data.error) throw new Error(data.error);
-    
-    // Build all races
-    var allRaces = [];
-    if (data.failures) {
-      for (var i = 0; i < data.failures.length; i++) {
-        var f = data.failures[i];
-        if (!f.allRunners) continue;
-        
-        // Get finishers
-        var finishers = [];
-        for (var j = 0; j < f.allRunners.length; j++) {
-          var r = f.allRunners[j];
-          if (r.finish && r.finish <= 3) {
-            finishers.push(r);
-          }
-        }
-        finishers.sort(function(a, b) { return a.finish - b.finish; });
-        
-        // Check success: did algorithm's TOP PICK finish in top 3?
-        var isSuccess = false;
-        for (var k = 0; k < f.allRunners.length; k++) {
-          var runner = f.allRunners[k];
-          if (runner.horse === f.topPick && runner.finish && runner.finish <= 3) {
-            isSuccess = true;
-            break;
-          }
-        }
-        
-        allRaces.push({
-          date: f.time,
-          course: f.course,
-          name: f.name,
-          finishers: finishers,
-          topAlgoScore: f.topScore,
-          topAlgoPick: f.topPick,
-          isSuccess: isSuccess
-        });
-      }
-    }
-    
-    var successCount = 0;
-    for (var i = 0; i < allRaces.length; i++) {
-      if (allRaces[i].isSuccess) successCount++;
-    }
-    var hitRate = allRaces.length > 0 ? Math.round((successCount / allRaces.length) * 100) : 0;
-    
-    document.getElementById('analyzer-hit-rate').textContent = hitRate + '%';
-    document.getElementById('analyzer-failure-count').textContent = allRaces.length;
-    
-    // Build results HTML
-    var resultsHtml = '';
-    for (var i = 0; i < allRaces.length; i++) {
-      var race = allRaces[i];
-      var dateFormatted = 'No date';
-      try {
-        if (typeof race.date === 'string' && race.date.indexOf('T') > -1) {
-          var d = new Date(race.date.substring(0, 10) + 'T00:00:00Z');
-          if (!isNaN(d.getTime())) {
-            dateFormatted = d.toLocaleDateString('en-GB', { weekday:'short', month:'short', day:'numeric' });
-          }
-        }
-      } catch(e) {}
-      
-      var statusBg = race.isSuccess ? '#d4edda' : '#f8d7da';
-      var statusText = race.isSuccess ? '✓ SUCCESS' : '✗ MISS';
-      var statusColor = race.isSuccess ? '#155724' : '#721c24';
-      
-      var finishersHtml = '';
-      for (var j = 0; j < race.finishers.length; j++) {
-        var fin = race.finishers[j];
-        var finBg = fin.finish === 1 ? '#e8f5e9' : fin.finish === 2 ? '#e3f2fd' : '#fffde7';
-        finishersHtml += '<div style="padding:6px 8px;margin-bottom:3px;background:' + finBg + ';border-radius:3px;display:flex;justify-content:space-between;align-items:center;font-size:12px">' +
-          '<span><strong>#' + fin.finish + ':</strong> ' + fin.horse + '</span>' +
-          '<span style="color:#666"><strong>' + fin.score + '</strong>pts</span>' +
-          '</div>';
-      }
-      
-      resultsHtml += '<div style="padding:12px;border-left:4px solid ' + statusColor + ';margin-bottom:12px;background:#fafafa;border-radius:4px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">' +
-        '<div><div style="font-weight:600;font-size:13px">' + race.course + ' — ' + race.name + '</div>' +
-        '<div style="font-size:11px;color:#666">' + dateFormatted + '</div></div>' +
-        '<div style="background:' + statusBg + ';color:' + statusColor + ';padding:4px 8px;border-radius:4px;font-size:11px;font-weight:600">' + statusText + '</div>' +
-        '</div>' +
-        '<div style="margin-bottom:8px">' +
-        '<div style="font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Actual Finishers:</div>' +
-        finishersHtml +
-        '</div>' +
-        '<div style="padding:6px 8px;background:#fff3e0;border-left:2px solid #ff9800;border-radius:3px;font-size:11px">' +
-        '<div><strong>Algorithm\'s top pick:</strong> ' + race.topAlgoPick + '</div>' +
-        '<div style="color:#666"><strong>' + race.topAlgoScore + '</strong>pts</div>' +
-        '</div></div>';
-    }
-    
-    document.getElementById('analyzer-failures').innerHTML = resultsHtml || 'No races found';
-    
+
+    document.getElementById('analyzer-hit-rate').textContent = (data.hitRate || 0) + '%';
+    document.getElementById('analyzer-failure-count').textContent = data.totalRaces || 0;
+
+    // Build weight controls. These must exist before testWeights() is clicked.
+    const weightsControl = document.getElementById('analyzer-weights-controls');
+    const weights = {
+      form_weight: ['Form', 15],
+      freshness_weight: ['Freshness', 4],
+      or_weight: ['OR', 10],
+      draw_weight: ['Draw', 3],
+      weight_weight: ['Weight', 5],
+      trainer_weight: ['Trainer', 5],
+      jockey_weight: ['Jockey', 5],
+      cd_weight: ['C&D', 3]
+    };
+
+    weightsControl.innerHTML = Object.entries(weights).map(([id, w]) => `
+      <div>
+        <label>${w[0]}</label>
+        <input id="${id}" type="number" value="${w[1]}" style="width:100%;padding:8px;border:1.5px solid var(--border);border-radius:8px;font-size:14px">
+      </div>
+    `).join('');
+
+    // Failure pattern counts
+    const reasonCounts = {};
+    (data.failures || []).forEach(f => {
+      (f.reasons || []).forEach(r => {
+        reasonCounts[r] = (reasonCounts[r] || 0) + 1;
+      });
+    });
+
+    document.getElementById('analyzer-patterns').innerHTML =
+      Object.keys(reasonCounts).length
+        ? Object.entries(reasonCounts).map(([r, c]) =>
+            `<div style="padding:6px 0;border-bottom:1px solid var(--border)"><strong>${r}</strong>: ${c}</div>`
+          ).join('')
+        : '<p class="text-muted">No failure patterns found.</p>';
+
+    // Failure list
+    document.getElementById('analyzer-failures').innerHTML =
+      (data.failures || []).map(f => `
+        <div style="padding:10px;border-bottom:1px solid var(--border)">
+          <div style="font-weight:600;font-size:14px"><strong>${f.course}</strong> — ${f.name || ''}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+            Winner: <strong>${f.winner}</strong> ranked ${f.winnerRank} with ${f.winnerScore} pts
+          </div>
+          <div style="font-size:12px;color:var(--text-muted)">
+            Top pick: <strong>${f.topPick}</strong> with ${f.topScore} pts
+          </div>
+          <div style="font-size:12px;color:var(--amber);margin-top:4px">
+            Score gap: ${f.scoreDiff} pts
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+            ${(f.reasons || []).join(' • ')}
+          </div>
+        </div>
+      `).join('') || '<p class="text-muted">No failures found.</p>';
+
     loading.style.display = 'none';
     content.style.display = 'block';
+
   } catch(e) {
     loading.style.display = 'none';
     error.style.display = 'block';
@@ -2463,36 +2427,40 @@ async function loadAnalyzer() {
   }
 }
 
-// Test weight adjustments
 async function testWeights() {
   const btn = document.getElementById('analyzer-test-btn');
   const result = document.getElementById('analyzer-test-result');
-  
+
   btn.disabled = true;
   result.style.display = 'none';
-  
+
   try {
+    const getVal = (id, fallback) => {
+      const el = document.getElementById(id);
+      return el ? el.value : fallback;
+    };
+
     const params = new URLSearchParams({
       action: 'testwweights',
-      form_weight: document.getElementById('form_weight').value || 15,
-      freshness_weight: document.getElementById('freshness_weight').value || 4,
-      or_weight: document.getElementById('or_weight').value || 10,
-      draw_weight: document.getElementById('draw_weight').value || 3,
-      weight_weight: document.getElementById('weight_weight').value || 5,
-      trainer_weight: document.getElementById('trainer_weight').value || 5,
-      jockey_weight: document.getElementById('jockey_weight').value || 5,
-      cd_weight: document.getElementById('cd_weight').value || 3
+      form_weight: getVal('form_weight', 15),
+      freshness_weight: getVal('freshness_weight', 4),
+      or_weight: getVal('or_weight', 10),
+      draw_weight: getVal('draw_weight', 3),
+      weight_weight: getVal('weight_weight', 5),
+      trainer_weight: getVal('trainer_weight', 5),
+      jockey_weight: getVal('jockey_weight', 5),
+      cd_weight: getVal('cd_weight', 3)
     });
-    
-    const res = await fetch(SCRIPT_URL + '?' + params);
+
+    const res = await fetch(SCRIPT_URL + '?' + params.toString());
     const data = await res.json();
-    
-    if (data.error) {
-      result.textContent = 'Error: ' + data.error;
-    } else {
-      result.textContent = `With new weights: ${data.hitsWithNewWeights} races hit (${data.newHitRate}%)`;
-    }
+
+    result.textContent = data.error
+      ? 'Error: ' + data.error
+      : `With new weights: ${data.hitsWithNewWeights} races hit (${data.newHitRate}%)`;
+
     result.style.display = 'block';
+
   } catch(e) {
     result.textContent = 'Error: ' + e.message;
     result.style.display = 'block';
