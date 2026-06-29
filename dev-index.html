@@ -2748,18 +2748,43 @@ async function loadAlgorithmLabSummary(forceReload) {
     if (data.error) throw new Error(data.error);
     algorithmLabSummaryCache = data;
 
+    const skipHtml = data.skipCounts && Object.keys(data.skipCounts).length
+      ? '<div style="margin-top:10px;font-size:12px;color:var(--text-muted)">' +
+        '<strong>Skipped reasons:</strong><br>' +
+        Object.entries(data.skipCounts).map(([k,v]) => `${k}: ${v}`).join('<br>') +
+        '</div>'
+      : '';
+
     summaryEl.innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div><strong>${data.races}</strong><br><span class="text-muted">races analysed</span></div>
+        <div><strong>${data.totalRaces || data.races}</strong><br><span class="text-muted">unique races</span></div>
         <div><strong>${data.rows}</strong><br><span class="text-muted">horse rows</span></div>
+        <div><strong>${data.races}</strong><br><span class="text-muted">analysable races</span></div>
+        <div><strong>${data.skippedRaces || 0}</strong><br><span class="text-muted">skipped races</span></div>
         <div><strong>${data.top1Rate}%</strong><br><span class="text-muted">winner ranked #1</span></div>
         <div><strong>${data.top3Rate}%</strong><br><span class="text-muted">winner in top 3</span></div>
         <div><strong>${data.averageWinnerRank}</strong><br><span class="text-muted">avg winner rank</span></div>
         <div><strong>${data.averageScoreGap}</strong><br><span class="text-muted">avg score gap</span></div>
       </div>
+      ${skipHtml}
     `;
 
     const races = data.raceSummaries || [];
+    const skipped = data.skipped || [];
+    const skippedHtml = skipped.length ? `
+      <details style="margin-top:10px">
+        <summary style="cursor:pointer;font-weight:600;color:var(--amber)">Skipped races (${data.skippedRaces || skipped.length})</summary>
+        <div style="margin-top:8px">
+          ${skipped.slice(0,80).map(s => `
+            <div style="padding:8px;border-bottom:1px solid var(--border);background:var(--amber-light)">
+              <strong>${s.course}</strong> — ${s.name || ''}
+              <div style="font-size:12px;color:var(--text-muted)">Reason: ${s.reason} · runners: ${s.runners}</div>
+            </div>
+          `).join('')}
+        </div>
+      </details>
+    ` : '';
+
     racesEl.innerHTML = races.length ? races.map(r => `
       <div onclick="loadRaceDrilldown('${String(r.raceKey).replace(/'/g, "\\'")}')"
         style="padding:10px;border-bottom:1px solid var(--border);cursor:pointer;background:${r.hitTop3 ? '#fff' : 'var(--red-light)'}">
@@ -2770,7 +2795,7 @@ async function loadAlgorithmLabSummary(forceReload) {
           · Gap: ${r.scoreGap}
         </div>
       </div>
-    `).join('') : '<p class="text-muted">No telemetry yet. Tap “Rebuild telemetry from ScoreLog”.</p>';
+    `).join('') + skippedHtml : '<p class="text-muted">No telemetry yet. Tap “Rebuild telemetry from ScoreLog”.</p>' + skippedHtml;
 
   } catch(e) {
     summaryEl.innerHTML = `<div class="notice error">Telemetry unavailable: ${e.message}</div>`;
