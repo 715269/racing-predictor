@@ -1429,7 +1429,10 @@ async function loadResults() {
 
     if (allPicks.length === 0) {
       document.getElementById('results-content').innerHTML =
-        '<p class="text-muted" style="text-align:center;padding:30px 0">No picks submitted yet this week.</p>';
+        `<div class="card"><div class="card-body">
+          <button class="btn btn-amber btn-full" onclick="fetchAllRaceResults(this)">Fetch all results for this week</button>
+          <p class="text-muted" style="text-align:center;padding:20px 0 0">No picks submitted yet this week.</p>
+        </div></div>`;
       document.getElementById('results-loading').style.display = 'none';
       return;
     }
@@ -1447,7 +1450,18 @@ async function loadResults() {
       return ta.localeCompare(tb);
     });
 
-    let html = '';
+    let html = `
+      <div class="card">
+        <div class="card-body">
+          <button class="btn btn-amber btn-full" onclick="fetchAllRaceResults(this)">
+            Fetch all results for this week
+          </button>
+          <p class="text-muted" style="margin-top:8px;font-size:12px">
+            Checks every selected race and updates picks, results and AlgorithmTelemetry where results are available.
+          </p>
+        </div>
+      </div>
+    `;
     for (const [raceId, raceData] of sortedRaces) {
       const hasResults = raceData.picks.some(p => p.finish !== '' && p.finish !== undefined);
       const weekPts = raceData.picks.reduce((s, p) => s + (parseInt(p.points)||0), 0);
@@ -1563,6 +1577,43 @@ async function loadResults() {
   }
   document.getElementById('results-loading').style.display = 'none';
 }
+
+
+async function fetchAllRaceResults(btn) {
+  if (!confirm('Fetch results for all selected races this week? This may take a little while.')) return;
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching all results...';
+
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=fetchallresults&week=${weekNumber}`);
+    const data = await res.json();
+
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    const msg =
+      `Fetch all complete\n\n` +
+      `Races checked: ${data.racesRequested}\n` +
+      `Successful: ${data.successCount}\n` +
+      `Errors/not ready: ${data.errorCount}\n` +
+      `Pick rows updated: ${data.totalPicksUpdated}\n` +
+      `Telemetry rows updated: ${data.totalTelemetryUpdated}`;
+
+    alert(msg);
+    await loadResults();
+
+  } catch(e) {
+    alert('Could not fetch all results: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText || 'Fetch all results';
+  }
+}
+
 
 async function fetchRaceResults(raceId, week, btn) {
   btn.disabled = true;
