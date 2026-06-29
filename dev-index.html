@@ -242,7 +242,7 @@
   <button onclick="showPage('results')">Results</button>
   <button onclick="showPage('leaderboard')">Season</button>
   <button onclick="showPage('admin')">Admin</button>
-  <button onclick="showPage('analyzer')">Analyzer</button>
+  <button onclick="showPage('analyzer')">Algorithm Lab</button>
 </nav>
 
 <!-- PICKS PAGE -->
@@ -376,6 +376,23 @@
 
 <!-- ANALYZER PAGE -->
 <div id="page-analyzer" class="page">
+  <div id="analyzer-pin-gate">
+    <div class="card">
+      <div class="card-header">Algorithm Lab access</div>
+      <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;font-size:13px">
+          Enter the admin PIN to open the Algorithm Lab.
+        </p>
+        <div class="form-group">
+          <input type="password" id="analyzer-tab-pin" placeholder="PIN"
+            style="text-align:center;font-size:20px;letter-spacing:4px"
+            onkeydown="if(event.key==='Enter') checkAnalyzerPin()">
+        </div>
+        <button class="btn btn-green btn-full" onclick="checkAnalyzerPin()">Unlock Algorithm Lab</button>
+        <div id="analyzer-tab-pin-error" style="color:var(--red);font-size:13px;text-align:center;margin-top:8px;display:none">Incorrect PIN</div>
+      </div>
+    </div>
+  </div>
   <div id="analyzer-loading" class="notice" style="display:none">
     <span class="spinner"></span> Loading analysis...
   </div>
@@ -396,6 +413,26 @@
             <div style="font-size:12px;color:var(--text-muted)">Races analyzed</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Algorithm Lab telemetry -->
+    <div class="card">
+      <div class="card-header">Algorithm Lab Telemetry</div>
+      <div class="card-body">
+        <button class="btn btn-outline btn-full" onclick="rebuildTelemetry()" id="telemetry-rebuild-btn">
+          Rebuild telemetry from ScoreLog
+        </button>
+        <div id="algorithm-lab-summary" style="font-size:13px;margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Race drill-through -->
+    <div class="card">
+      <div class="card-header">Race Drill-through</div>
+      <div class="card-body">
+        <div id="algorithm-lab-races" style="font-size:13px;max-height:360px;overflow-y:auto"></div>
+        <div id="algorithm-lab-drilldown" style="font-size:13px;margin-top:12px"></div>
       </div>
     </div>
 
@@ -485,7 +522,7 @@ function showPage(name) {
   if (name === 'results') loadResults();
   if (name === 'leaderboard') loadLeaderboard();
   if (name === 'admin') initAdminTab();
-  if (name === 'analyzer') loadAnalyzer();
+  if (name === 'analyzer') initAnalyzerLab();
 }
 
 // =============================================
@@ -2370,6 +2407,43 @@ const ANALYZER_DEFAULT_WEIGHTS = {
 };
 
 let analyzerLoaded = false;
+let algorithmLabUnlocked = false;
+let algorithmLabSummaryCache = null;
+
+function initAnalyzerLab() {
+  const gate = document.getElementById('analyzer-pin-gate');
+  const content = document.getElementById('analyzer-content');
+  const loading = document.getElementById('analyzer-loading');
+  const error = document.getElementById('analyzer-error');
+
+  if (!algorithmLabUnlocked) {
+    gate.style.display = 'block';
+    content.style.display = 'none';
+    loading.style.display = 'none';
+    error.style.display = 'none';
+    setTimeout(() => {
+      const el = document.getElementById('analyzer-tab-pin');
+      if (el) el.focus();
+    }, 100);
+    return;
+  }
+
+  gate.style.display = 'none';
+  loadAnalyzer();
+}
+
+function checkAnalyzerPin() {
+  const entered = document.getElementById('analyzer-tab-pin').value;
+  if (entered === ADMIN_PIN) {
+    algorithmLabUnlocked = true;
+    document.getElementById('analyzer-tab-pin-error').style.display = 'none';
+    document.getElementById('analyzer-pin-gate').style.display = 'none';
+    loadAnalyzer(true);
+  } else {
+    document.getElementById('analyzer-tab-pin-error').style.display = 'block';
+    document.getElementById('analyzer-tab-pin').value = '';
+  }
+}
 
 function analyzerGetWeights() {
   const params = {};
@@ -2498,6 +2572,8 @@ function renderAnalyzerData(data) {
         ${factorComparisonHtml(f)}
       </div>
     `).join('') || '<p class="text-muted">No failures found.</p>';
+
+  loadAlgorithmLabSummary();
 }
 
 async function loadAnalyzer(forceReload) {
@@ -2633,6 +2709,125 @@ function renderWeightTestResult(data, mode) {
     ${changesHtml}
   `;
   result.style.display = 'block';
+}
+
+
+async function rebuildTelemetry() {
+  const btn = document.getElementById('telemetry-rebuild-btn');
+  const summary = document.getElementById('algorithm-lab-summary');
+  btn.disabled = true;
+  btn.textContent = 'Rebuilding telemetry...';
+  summary.innerHTML = '<p class="text-muted">Building AlgorithmTelemetry from ScoreLog...</p>';
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=rebuildtelemetry');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    summary.innerHTML = `<div class="notice success" style="margin-bottom:10px">
+      Telemetry rebuilt: ${data.races} races, ${data.rows} horse rows.
+    </div>`;
+    await loadAlgorithmLabSummary(true);
+  } catch(e) {
+    summary.innerHTML = `<div class="notice error">Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Rebuild telemetry from ScoreLog';
+  }
+}
+
+async function loadAlgorithmLabSummary(forceReload) {
+  const summaryEl = document.getElementById('algorithm-lab-summary');
+  const racesEl = document.getElementById('algorithm-lab-races');
+  if (!summaryEl || !racesEl) return;
+
+  if (algorithmLabSummaryCache && !forceReload) return;
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getlabsummary');
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    algorithmLabSummaryCache = data;
+
+    summaryEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div><strong>${data.races}</strong><br><span class="text-muted">races analysed</span></div>
+        <div><strong>${data.rows}</strong><br><span class="text-muted">horse rows</span></div>
+        <div><strong>${data.top1Rate}%</strong><br><span class="text-muted">winner ranked #1</span></div>
+        <div><strong>${data.top3Rate}%</strong><br><span class="text-muted">winner in top 3</span></div>
+        <div><strong>${data.averageWinnerRank}</strong><br><span class="text-muted">avg winner rank</span></div>
+        <div><strong>${data.averageScoreGap}</strong><br><span class="text-muted">avg score gap</span></div>
+      </div>
+    `;
+
+    const races = data.raceSummaries || [];
+    racesEl.innerHTML = races.length ? races.map(r => `
+      <div onclick="loadRaceDrilldown('${String(r.raceKey).replace(/'/g, "\\'")}')"
+        style="padding:10px;border-bottom:1px solid var(--border);cursor:pointer;background:${r.hitTop3 ? '#fff' : 'var(--red-light)'}">
+        <div style="font-weight:600">${r.course} — ${r.name || ''}</div>
+        <div style="font-size:12px;color:var(--text-muted)">
+          Winner: <strong>${r.winner}</strong> ranked ${r.winnerRank}
+          · Top pick: <strong>${r.topPick}</strong>
+          · Gap: ${r.scoreGap}
+        </div>
+      </div>
+    `).join('') : '<p class="text-muted">No telemetry yet. Tap “Rebuild telemetry from ScoreLog”.</p>';
+
+  } catch(e) {
+    summaryEl.innerHTML = `<div class="notice error">Telemetry unavailable: ${e.message}</div>`;
+  }
+}
+
+async function loadRaceDrilldown(raceKey) {
+  const el = document.getElementById('algorithm-lab-drilldown');
+  el.innerHTML = '<p class="text-muted">Loading race detail...</p>';
+
+  try {
+    const res = await fetch(SCRIPT_URL + '?action=getlabdrilldown&race_key=' + encodeURIComponent(raceKey));
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const rows = data.runners || [];
+    const factorLabels = [
+      ['form','Form'], ['freshness','Fresh'], ['or','OR'], ['draw','Draw'],
+      ['weight','Weight'], ['trainer','Trainer'], ['jockey','Jockey'], ['cd','C&D']
+    ];
+
+    el.innerHTML = `
+      <div class="card" style="box-shadow:none;border:1px solid var(--border)">
+        <div class="card-header">${data.course} — ${data.name || ''}</div>
+        <div class="card-body">
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
+            Winner: <strong>${data.winner ? data.winner.horse : 'Unknown'}</strong>
+            ${data.winner ? 'ranked ' + data.winner.rank : ''}
+          </div>
+          ${rows.map(r => `
+            <details style="border-bottom:1px solid var(--border);padding:8px 0" ${r.isWinner ? 'open' : ''}>
+              <summary style="cursor:pointer">
+                <strong>#${r.rank} ${r.horse}</strong>
+                <span style="float:right">${r.score} pts ${r.isWinner ? '🏆' : ''}</span>
+              </summary>
+              <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:12px">
+                <tbody>
+                  ${factorLabels.map(([key,label]) => `
+                    <tr>
+                      <td style="padding:4px;border-bottom:1px solid var(--border)">${label}</td>
+                      <td style="padding:4px;text-align:right;border-bottom:1px solid var(--border)">${r.factors[key] || 0}</td>
+                    </tr>
+                  `).join('')}
+                  <tr>
+                    <td style="padding:4px;border-bottom:1px solid var(--border)">Finish</td>
+                    <td style="padding:4px;text-align:right;border-bottom:1px solid var(--border)">${r.finish || ''}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </details>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="notice error">Error: ${e.message}</div>`;
+  }
 }
 
 async function testWeights() {
