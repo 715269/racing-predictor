@@ -1128,33 +1128,50 @@ function savePick(raceId, course, time, name) {
 }
 
 
-function buildTelemetryRunnerPayload(raceId, course) {
+function getRunnerScoreTelemetry(runner, raceId, course) {
   const raceRunners = runners[raceId] || [];
   const active = raceRunners.filter(r => !r.is_nr);
   const fieldSize = active.length;
+  const s = scoreRunner(runner, fieldSize, course, active);
 
-  const getScore = (scoreObj, labelStartsWith) => {
-    const item = (scoreObj.breakdown || []).find(b =>
-      b.score !== null && String(b.label || '').toLowerCase().startsWith(labelStartsWith)
+  const findScore = (startsWith) => {
+    const item = (s.breakdown || []).find(b =>
+      b.score !== null && String(b.label || '').toLowerCase().startsWith(startsWith)
     );
     return item ? Number(item.score || 0) : 0;
   };
 
+  const telemetry = {
+    total: Number(s.total || 0),
+    max: Number(s.max || 50),
+    form: findScore('recent form'),
+    freshness: findScore('freshness'),
+    or: findScore('official rating'),
+    draw: findScore('draw'),
+    weight: findScore('weight'),
+    trainer: findScore('trainer'),
+    jockey: findScore('jockey'),
+    cd: findScore('c&d')
+  };
+
+  telemetry.factorTotal =
+    telemetry.form + telemetry.freshness + telemetry.or + telemetry.draw +
+    telemetry.weight + telemetry.trainer + telemetry.jockey + telemetry.cd;
+
+  // Safety: visible score must equal factor total and must not exceed max.
+  telemetry.total = Math.round(telemetry.factorTotal * 10) / 10;
+  if (telemetry.total > telemetry.max) telemetry.total = telemetry.max;
+
+  return { score: s, telemetry };
+}
+
+function buildTelemetryRunnerPayload(raceId, course) {
+  const raceRunners = runners[raceId] || [];
   return raceRunners.map(r => {
     if (r.is_nr) return r;
-    const s = scoreRunner(r, fieldSize, course, active);
+    const packed = getRunnerScoreTelemetry(r, raceId, course);
     return Object.assign({}, r, {
-      telemetry: {
-        total: Number(s.total || 0),
-        form: getScore(s, 'recent form'),
-        freshness: getScore(s, 'freshness'),
-        or: getScore(s, 'official rating'),
-        draw: getScore(s, 'draw'),
-        weight: getScore(s, 'weight'),
-        trainer: getScore(s, 'trainer'),
-        jockey: getScore(s, 'jockey'),
-        cd: getScore(s, 'c&d')
-      }
+      telemetry: packed.telemetry
     });
   });
 }
@@ -1295,84 +1312,14 @@ async function submitPickDirect(raceId, course, time, name, horse) {
 
 async function logRunnersForRace(raceId, course, time, name) {
   try {
-    // Find runners for this race by raceId
-    let raceRunners = runners[raceId];
-    
-    if (!raceRunners || raceRunners.length === 0) {
+    const raceRunners = runners[raceId] || [];
+    if (!raceRunners.length) {
       console.log('No runners found for raceId:', raceId);
       return;
     }
-    
-    // Validate FORM_DATA is available
-    if (!FORM_DATA || !FORM_DATA.trainerForm) {
-      console.log('⚠ FORM_DATA not ready');
-      console.log('FORM_DATA:', FORM_DATA);
-      return;
-    }
-    
-    // Check FORM_DATA structure
-    console.log('FORM_DATA keys:', Object.keys(FORM_DATA));
-    console.log('courseTrainers exists?', !!FORM_DATA.courseTrainers);
-    console.log('courseTrainers is array?', Array.isArray(FORM_DATA.courseTrainers));
-    
-    console.log('Scoring', raceRunners.length, 'runners for', course, time);
-    
-    // Simple FORM_DATA check
-    console.log('FORM_DATA exists?', !!FORM_DATA);
-    if (!FORM_DATA) {
-      console.log('ERROR: FORM_DATA is null/undefined');
-      return;
-    }
-    
-    // Score all runners in this race
-    let scoredRunners = [];
-    for (let idx = 0; idx < raceRunners.length; idx++) {
-      try {
-        const r = raceRunners[idx];
-        
-        // Try to score, with fallback to minimal scoring
-        let scored;
-        try {
-          scored = scoreRunner(r, course, FORM_DATA);
-        } catch(scoreErr) {
-          console.log('scoreRunner error for', r.name + ':', scoreErr.message);
-          // Fallback: just use OR value
-          scored = {
-            total: r.ofr || 0,
-            max: 50,
-            breakdown: [
-              { label: 'Form', score: 0 },
-              { label: 'Freshness', score: 0 },
-              { label: 'OR', score: r.ofr || 0 },
-              { label: 'Draw', score: 0 },
-              { label: 'Weight', score: 0 },
-              { label: 'Trainer', score: 0 },
-              { label: 'Jockey', score: 0 },
-              { label: 'C&D Winner', score: 0 }
-            ]
-          };
-        }
 
-        scoredRunners.push({
-          name: r.name,
-          jockey: r.jockey || '',
-          trainer: r.trainer || '',
-          ofr: r.ofr || '',
-          draw: r.draw || '',
-          lbs: r.lbs || '',
-          is_nr: r.is_nr || false,
-          score: scored
-        });
-      } catch(runnerErr) {
-        console.log('Error scoring runner ' + idx + ':', runnerErr.message);
-      }
-    }
+    const payload = buildTelemetryRunnerPayload(raceId, course);
 
-    if (scoredRunners.length === 0) {
-      console.log('⚠ No runners scored successfully');
-      return;
-    }
-    
     const logParams = new URLSearchParams({
       action: 'logracerunners',
       week: weekNumber,
@@ -1380,34 +1327,55 @@ async function logRunnersForRace(raceId, course, time, name) {
       course: course,
       race_time: time,
       race_name: name || '',
-      runners: JSON.stringify(scoredRunners)
+      runners: JSON.stringify(payload)
     });
-    
+
     const logRes = await fetch(SCRIPT_URL + '?' + logParams.toString());
     const logData = await logRes.json();
-    
+
     if (logData.success) {
-      console.log('✓ Auto-saved', logData.logged, 'runners for', course, time);
+      console.log('✓ Logged telemetry for', course, time, logData);
     } else {
-      console.log('⚠ Failed to save runners:', logData.error);
+      console.log('⚠ Failed to log runners:', logData.error);
     }
-    
-    // Also save scores to RaceRunners (new architecture)
+
+    // Optional legacy RaceRunners update, using the same clean payload.
     const raceRunnersParams = new URLSearchParams({
       action: 'logrunnerstoracerunnners',
       week: weekNumber,
       course: course,
       race_time: time,
-      runners: JSON.stringify(scoredRunners)
+      runners: JSON.stringify(payload.map(r => ({
+        name: r.name,
+        jockey: r.jockey || '',
+        trainer: r.trainer || '',
+        ofr: r.ofr || '',
+        draw: r.draw || '',
+        lbs: r.lbs || '',
+        is_nr: r.is_nr || false,
+        score: {
+          total: r.telemetry ? r.telemetry.total : 0,
+          max: r.telemetry ? r.telemetry.max : 50,
+          breakdown: [
+            { label: 'Recent form', score: r.telemetry ? r.telemetry.form : 0 },
+            { label: 'Freshness', score: r.telemetry ? r.telemetry.freshness : 0 },
+            { label: 'Official Rating', score: r.telemetry ? r.telemetry.or : 0 },
+            { label: 'Draw', score: r.telemetry ? r.telemetry.draw : 0 },
+            { label: 'Weight', score: r.telemetry ? r.telemetry.weight : 0 },
+            { label: 'Trainer', score: r.telemetry ? r.telemetry.trainer : 0 },
+            { label: 'Jockey', score: r.telemetry ? r.telemetry.jockey : 0 },
+            { label: 'C&D Winner', score: r.telemetry ? r.telemetry.cd : 0 }
+          ]
+        }
+      })))
     });
-    
-    const rrRes = await fetch(SCRIPT_URL + '?' + raceRunnersParams.toString());
-    const rrData = await rrRes.json();
-    
-    if (rrData.success) {
-      console.log('✓ Updated', rrData.updated, 'runners in RaceRunners with scores');
-    } else {
-      console.log('⚠ Failed to update RaceRunners:', rrData.error);
+
+    try {
+      const rrRes = await fetch(SCRIPT_URL + '?' + raceRunnersParams.toString());
+      const rrData = await rrRes.json();
+      if (rrData.success) console.log('✓ Updated RaceRunners with clean scores');
+    } catch(rrErr) {
+      console.log('RaceRunners legacy update skipped:', rrErr.message);
     }
   } catch(e) {
     console.log('Error in logRunnersForRace:', e.message);
