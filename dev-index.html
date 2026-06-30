@@ -1127,6 +1127,39 @@ function savePick(raceId, course, time, name) {
   renderPicksSummary();
 }
 
+
+function buildTelemetryRunnerPayload(raceId, course) {
+  const raceRunners = runners[raceId] || [];
+  const active = raceRunners.filter(r => !r.is_nr);
+  const fieldSize = active.length;
+
+  const getScore = (scoreObj, labelStartsWith) => {
+    const item = (scoreObj.breakdown || []).find(b =>
+      b.score !== null && String(b.label || '').toLowerCase().startsWith(labelStartsWith)
+    );
+    return item ? Number(item.score || 0) : 0;
+  };
+
+  return raceRunners.map(r => {
+    if (r.is_nr) return r;
+    const s = scoreRunner(r, fieldSize, course, active);
+    return Object.assign({}, r, {
+      telemetry: {
+        total: Number(s.total || 0),
+        form: getScore(s, 'recent form'),
+        freshness: getScore(s, 'freshness'),
+        or: getScore(s, 'official rating'),
+        draw: getScore(s, 'draw'),
+        weight: getScore(s, 'weight'),
+        trainer: getScore(s, 'trainer'),
+        jockey: getScore(s, 'jockey'),
+        cd: getScore(s, 'c&d')
+      }
+    });
+  });
+}
+
+
 async function submitPick(raceId, course, time, name) {
   const sel = document.getElementById('horse-select-' + raceId);
   const horse = (sel && sel.value) || (picks[currentPlayer] && picks[currentPlayer][raceId]);
