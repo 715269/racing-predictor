@@ -27,6 +27,7 @@ jobs:
       - name: Run scraper
         env:
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_URL_DEV: ${{ secrets.APPS_SCRIPT_URL_DEV }}
         run: node scrape.js
 
       - name: Upload debug screenshot
