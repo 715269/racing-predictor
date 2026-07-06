@@ -3,12 +3,19 @@
 
 const puppeteer = require('puppeteer');
 
-const SCRIPT_URL = process.env.APPS_SCRIPT_URL;
+// Supports one or two targets: LIVE is required, DEV is optional.
+// Both env vars can point to different Apps Script deployments so a single
+// scrape run updates both environments' FD_ sheets without manual copying.
+const TARGET_URLS = [
+  { name: 'LIVE', url: process.env.APPS_SCRIPT_URL },
+  { name: 'DEV',  url: process.env.APPS_SCRIPT_URL_DEV }
+].filter(t => !!t.url);
 
-if (!SCRIPT_URL) {
-  console.error('ERROR: APPS_SCRIPT_URL environment variable not set');
+if (TARGET_URLS.length === 0) {
+  console.error('ERROR: no target URLs set. Set APPS_SCRIPT_URL (and optionally APPS_SCRIPT_URL_DEV).');
   process.exit(1);
 }
+console.log('Sending to targets: ' + TARGET_URLS.map(t => t.name).join(', '));
 
 function parsePct(val) {
   const cleaned = parseFloat(String(val || '').replace('%', '')) || 0;
@@ -49,15 +56,15 @@ async function extractTableByHeading(page, headingText) {
   }, headingText);
 }
 
-async function sendTable(name, payload) {
+async function sendTable(url, payload) {
   const https = require('https');
-  const url = new URL(SCRIPT_URL);
+  const parsedUrl = new URL(url);
   const body = JSON.stringify(payload);
 
   return new Promise((resolve, reject) => {
     const req = https.request({
-      hostname: url.hostname,
-      path: url.pathname + url.search,
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.pathname + parsedUrl.search,
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8', 'Content-Length': Buffer.byteLength(body) }
     }, (res) => {
@@ -225,8 +232,8 @@ async function sendTable(name, payload) {
     process.exit(1);
   }
 
-  // ── SEND TO APPS SCRIPT (4 separate requests) ─────────────────────
-  console.log('\nSending data to Google Sheet...');
+  // ── SEND TO APPS SCRIPT (4 tables x N targets) ─────────────────────
+  console.log('\nSending data to Google Sheet(s)...');
   const tables = [
     { name: 'hotTrainers',    payload: { action: 'saveformdata', hotTrainers } },
     { name: 'hotJockeys',     payload: { action: 'saveformdata', hotJockeys } },
@@ -235,19 +242,22 @@ async function sendTable(name, payload) {
   ];
 
   let allOk = true;
-  for (const t of tables) {
-    try {
-      const result = await sendTable(t.name, t.payload);
-      const parsed = JSON.parse(result.body);
-      if (parsed.success) {
-        console.log(`  - ${t.name}: saved OK`);
-      } else {
-        console.error(`  X ${t.name}: ${parsed.error || 'unknown error'}`);
+  for (const target of TARGET_URLS) {
+    console.log(`\n[${target.name}]`);
+    for (const t of tables) {
+      try {
+        const result = await sendTable(target.url, t.payload);
+        const parsed = JSON.parse(result.body);
+        if (parsed.success) {
+          console.log(`  - ${t.name}: saved OK`);
+        } else {
+          console.error(`  X ${t.name}: ${parsed.error || 'unknown error'}`);
+          allOk = false;
+        }
+      } catch (e) {
+        console.error(`  X ${t.name} failed: ${e.message}`);
         allOk = false;
       }
-    } catch (e) {
-      console.error(`  X ${t.name} failed: ${e.message}`);
-      allOk = false;
     }
   }
 
