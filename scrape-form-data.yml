@@ -24,6 +24,17 @@ jobs:
       - name: Install Puppeteer
         run: npm install puppeteer
 
+      - name: Debug secret availability
+        env:
+          APPS_SCRIPT_URL_DEV: ${{ secrets.APPS_SCRIPT_URL_DEV }}
+        run: |
+          echo "APPS_SCRIPT_URL_DEV length: ${#APPS_SCRIPT_URL_DEV}"
+          if [ -z "$APPS_SCRIPT_URL_DEV" ]; then
+            echo "RESULT: secret is EMPTY or not reaching this job"
+          else
+            echo "RESULT: secret has a value (length above is non-zero)"
+          fi
+
       - name: Run scraper
         env:
           APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
