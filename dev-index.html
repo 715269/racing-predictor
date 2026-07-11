@@ -2351,9 +2351,10 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
       trainerScore = Math.min(5, trainerScore + 1.5);
       trainerDetail += ' 🔥 (' + Math.round(hot.pct * 100) + '% last 14d)';
     }
-    // Course specialist bonus (+1)
+    // Course specialist bonus (scales with strike rate, capped at +1; 50%+ strike rate = full bonus)
     if (courseForm) {
-      trainerScore = Math.min(5, trainerScore + 1);
+      var courseBonus = Math.min(1, courseForm.pct / 0.5);
+      trainerScore = Math.min(5, trainerScore + courseBonus);
       trainerDetail += ' | ' + course + ' specialist ' + Math.round(courseForm.pct * 100) + '%';
     }
     if (!hot && !courseForm) trainerDetail += ' (no hot data)';
@@ -2397,8 +2398,10 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
       jockeyScore = Math.min(5, jockeyScore + 1.5);
       jockeyDetail += ' 🔥 (' + Math.round(hot.pct * 100) + '% last 14d)';
     }
+    // Course jockey bonus (scales with strike rate, capped at +0.5; 50%+ strike rate = full bonus)
     if (courseForm) {
-      jockeyScore = Math.min(5, jockeyScore + 0.5);
+      var jockeyCourseBonus = 0.5 * Math.min(1, courseForm.pct / 0.5);
+      jockeyScore = Math.min(5, jockeyScore + jockeyCourseBonus);
       jockeyDetail += ' | ' + course + ' ' + Math.round(courseForm.pct * 100) + '%';
     }
     if (combo) {
