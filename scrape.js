@@ -185,6 +185,17 @@ async function sendTable(url, payload) {
   }).filter(r => r.name && r.course);
   console.log(`  Found ${courseTrainers.length} course trainer rows`);
 
+  // ── TOP COURSE JOCKEYS ────────────────────────────────────────────
+  console.log('Extracting Top Course Jockeys...');
+  const courseJockeyTable = await extractTableByHeading(page, 'Top Course Jockeys');
+  console.log(`  Headers: [${courseJockeyTable.headers.join(', ')}]`);
+  const courseJockeys = courseJockeyTable.rows.map(r => {
+    const name = (r[0] || '').split('\n')[0].trim();
+    const course = (r[1] || '').split('\n')[0].trim();
+    return { name, course, wins: r[2], runs: r[3], pct: parsePct(r[4]) };
+  }).filter(r => r.name && r.course);
+  console.log(`  Found ${courseJockeys.length} course jockey rows`);
+
   // ── COURSE & DISTANCE WINNERS ──────────────────────────────────────
   console.log('Extracting Course & Distance Winners...');
   const cdTable = await extractTableByHeading(page, 'Course & Distance Winners');
@@ -224,7 +235,7 @@ async function sendTable(url, payload) {
   await browser.close();
 
   // ── SAFETY GUARD: never overwrite good sheet data with an empty scrape ──
-  const totalRows = hotTrainers.length + hotJockeys.length + courseTrainers.length + finalCdWinners.length;
+  const totalRows = hotTrainers.length + hotJockeys.length + courseTrainers.length + courseJockeys.length + finalCdWinners.length;
   if (totalRows === 0) {
     console.error('\nABORTING: all tables came back empty. This usually means the');
     console.error('site blocked the scraper (bot detection) or changed its layout.');
@@ -238,6 +249,7 @@ async function sendTable(url, payload) {
     { name: 'hotTrainers',    payload: { action: 'saveformdata', hotTrainers } },
     { name: 'hotJockeys',     payload: { action: 'saveformdata', hotJockeys } },
     { name: 'courseTrainers', payload: { action: 'saveformdata', courseTrainers } },
+    { name: 'courseJockeys',  payload: { action: 'saveformdata', courseJockeys } },
     { name: 'cdWinners',      payload: { action: 'saveformdata', cdWinners: finalCdWinners } }
   ];
 
@@ -265,6 +277,7 @@ async function sendTable(url, payload) {
   console.log(`  Hot Trainers:    ${hotTrainers.length} rows`);
   console.log(`  Hot Jockeys:     ${hotJockeys.length} rows`);
   console.log(`  Course Trainers: ${courseTrainers.length} rows`);
+  console.log(`  Course Jockeys:  ${courseJockeys.length} rows`);
   console.log(`  C&D Winners:     ${finalCdWinners.length} rows`);
 
   if (!allOk) {
