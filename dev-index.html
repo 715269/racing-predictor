@@ -2179,8 +2179,20 @@ let FORM_DATA = {
   trainerJockeyCombos: {}, // "trainer|jockey|course" -> comboPct
   horseOdds: {},        // horse name -> best odds string
   cdWinners: {},        // horse name (lowercase) -> course (C&D winner flag)
+  rpData: {},           // normalised horse name -> { course, time, rpr, ts, odds, rtf, tips, sources }
   loaded: false
 };
+
+// Normalise a horse name for FD_RPData lookups — must mirror the backend:
+// lowercase, strip punctuation, collapse whitespace.
+function normHorse(n) {
+  return String(n || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+// Normalise a course name for RP matching — strip "(AW)" / "(IRE)" suffixes.
+function normCourseRP(c) {
+  return String(c || '').replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
+}
 
 // Load form data from Apps Script (reads FormData sheet)
 async function loadFormData() {
@@ -2433,6 +2445,27 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   const bestOdds = rawOdds && /^\d+\/\d+$|^EVS$/.test(rawOdds.trim()) ? rawOdds.trim() : null;
   if (bestOdds) {
     breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
+  }
+
+  // ── 10. RACING POST DATA (informational only — no effect on /50 score) ──
+  // Sourced from FD_RPData via getformdata. Course is cross-checked so a
+  // same-named horse at another meeting can never match.
+  const rp = FORM_DATA.rpData && FORM_DATA.rpData[normHorse(r.name)];
+  if (rp && normCourseRP(rp.course) === normCourseRP(course)) {
+    if (rp.rpr || rp.ts) {
+      breakdown.push({ label: 'RPR / TS', score: null, max: null,
+        detail: 'RPR ' + (rp.rpr || '\u2013') + ' \u00b7 TS ' + (rp.ts || '\u2013') });
+    }
+    if (rp.odds) {
+      breakdown.push({ label: 'RP forecast', score: null, max: null, detail: rp.odds });
+    }
+    if (rp.rtf) {
+      breakdown.push({ label: 'Trainer RTF', score: null, max: null, detail: rp.rtf + '% run-to-form' });
+    }
+    if (rp.tips > 0) {
+      breakdown.push({ label: 'Tipsters', score: null, max: null,
+        detail: rp.tips + ' (' + rp.sources + ')' });
+    }
   }
 
   return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds };
