@@ -960,6 +960,18 @@ function renderRunnerPicker(race, submitted, sortMode) {
       const fb = parseInt((b.form||'').replace(/[^0-9]/g,'')[0]) || 9;
       return fa - fb;
     });
+  } else if (sortMode === 'rpr') {
+    active = [...active].sort((a, b) => {
+      const ra = (scores[a.name].rp && parseInt(scores[a.name].rp.rpr)) || -1;
+      const rb = (scores[b.name].rp && parseInt(scores[b.name].rp.rpr)) || -1;
+      return rb - ra;
+    });
+  } else if (sortMode === 'rpodds') {
+    active = [...active].sort((a, b) => {
+      const oa = (scores[a.name].rp && parseFloat(scores[a.name].rp.odds)) || Infinity;
+      const ob = (scores[b.name].rp && parseFloat(scores[b.name].rp.odds)) || Infinity;
+      return oa - ob;
+    });
   } else {
     active = [...active].sort((a,b) => (parseInt(a.number)||99)-(parseInt(b.number)||99));
   }
@@ -968,14 +980,14 @@ function renderRunnerPicker(race, submitted, sortMode) {
   const topOR = Math.max(...active.map(r => parseInt(r.ofr)||0));
 
   // Sort toggle
-  let html = `<div style="display:flex;gap:6px;margin-bottom:10px;margin-top:4px">
+  let html = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;margin-top:4px">
     <span style="font-size:12px;color:var(--text-muted);align-self:center;margin-right:4px">Sort:</span>
-    ${['score','number','or','form'].map(m => `
+    ${['score','number','or','form','rpr','rpodds'].map(m => `
       <button onclick="renderRunnerPicker(races.find(r=>r.race_id==='${race.race_id.replace(/'/g,"\\'")}'), false, '${m}')"
         style="padding:4px 10px;border-radius:12px;border:1.5px solid ${sortMode===m?'var(--green)':'var(--border)'};
         background:${sortMode===m?'var(--green)':'#fff'};color:${sortMode===m?'#fff':'var(--text-muted)'};
         font-size:12px;font-weight:500;cursor:pointer">
-        ${{score:'⚡ Score',number:'No.',or:'Rating',form:'Form'}[m]}
+        ${{score:'⚡ Score',number:'No.',or:'Rating',form:'Form',rpr:'RPR',rpodds:'RP Odds'}[m]}
       </button>`).join('')}
   </div><div>`;
 
@@ -2194,6 +2206,32 @@ function normCourseRP(c) {
   return String(c || '').replace(/\s*\([^)]*\)\s*$/, '').trim().toLowerCase();
 }
 
+// Convert Racing Post decimal odds (e.g. 1.625) to traditional fractional (5/8).
+// Snaps to the nearest standard betting price; falls back to decimal display.
+const RP_FRACTIONS = [
+  [1,100],[1,66],[1,50],[1,33],[1,25],[1,20],[1,16],[1,14],[1,12],[1,10],
+  [1,9],[1,8],[1,7],[1,6],[2,11],[1,5],[2,9],[1,4],[2,7],[3,10],[1,3],[4,11],
+  [2,5],[4,9],[1,2],[8,15],[4,7],[3,5],[8,13],[5,8],[4,6],[8,11],[4,5],[5,6],
+  [10,11],[1,1],[11,10],[6,5],[5,4],[11,8],[6,4],[13,8],[7,4],[15,8],[2,1],
+  [9,4],[5,2],[11,4],[3,1],[10,3],[7,2],[4,1],[9,2],[5,1],[11,2],[6,1],[13,2],
+  [7,1],[15,2],[8,1],[17,2],[9,1],[10,1],[11,1],[12,1],[14,1],[16,1],[18,1],
+  [20,1],[22,1],[25,1],[28,1],[33,1],[40,1],[50,1],[66,1],[80,1],[100,1]
+];
+function decToFrac(dec) {
+  const d = parseFloat(dec);
+  if (isNaN(d) || d <= 1) return '';
+  let best = null, bestDiff = Infinity;
+  for (const [n, den] of RP_FRACTIONS) {
+    const diff = Math.abs((n / den + 1) - d);
+    if (diff < bestDiff) { bestDiff = diff; best = [n, den]; }
+  }
+  // Accept the snap if within ~2% of the decimal price, else show decimal
+  if (best && bestDiff / d < 0.02) {
+    return best[0] === best[1] ? 'EVS' : best[0] + '/' + best[1];
+  }
+  return String(d);
+}
+
 // Load form data from Apps Script (reads FormData sheet)
 async function loadFormData() {
   try {
@@ -2457,7 +2495,9 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
         detail: 'RPR ' + (rp.rpr || '\u2013') + ' \u00b7 TS ' + (rp.ts || '\u2013') });
     }
     if (rp.odds) {
-      breakdown.push({ label: 'RP forecast', score: null, max: null, detail: rp.odds });
+      const frac = decToFrac(rp.odds);
+      breakdown.push({ label: 'RP forecast', score: null, max: null,
+        detail: frac ? frac + ' (' + parseFloat(rp.odds).toFixed(2) + ')' : rp.odds });
     }
     if (rp.rtf) {
       breakdown.push({ label: 'Trainer RTF', score: null, max: null, detail: rp.rtf + '% run-to-form' });
@@ -2468,7 +2508,7 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     }
   }
 
-  return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds };
+  return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds, rp: (rp && normCourseRP(rp.course) === normCourseRP(course)) ? rp : null };
 }
 
 function renderScoreBar(score, max, color) {
