@@ -2218,14 +2218,15 @@ const RP_FRACTIONS = [
   [20,1],[22,1],[25,1],[28,1],[33,1],[40,1],[50,1],[66,1],[80,1],[100,1]
 ];
 function decToFrac(dec) {
+  // RP forecast odds arrive as the fractional VALUE (4/5 -> 0.8, 5/1 -> 5),
+  // i.e. winnings per unit stake WITHOUT the stake added back.
   const d = parseFloat(dec);
-  if (isNaN(d) || d <= 1) return '';
+  if (isNaN(d) || d <= 0) return '';
   let best = null, bestDiff = Infinity;
   for (const [n, den] of RP_FRACTIONS) {
-    const diff = Math.abs((n / den + 1) - d);
+    const diff = Math.abs(n / den - d);
     if (diff < bestDiff) { bestDiff = diff; best = [n, den]; }
   }
-  // Accept the snap if within ~2% of the decimal price, else show decimal
   if (best && bestDiff / d < 0.02) {
     return best[0] === best[1] ? 'EVS' : best[0] + '/' + best[1];
   }
@@ -2497,7 +2498,7 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     if (rp.odds) {
       const frac = decToFrac(rp.odds);
       breakdown.push({ label: 'RP forecast', score: null, max: null,
-        detail: frac ? frac + ' (' + parseFloat(rp.odds).toFixed(2) + ')' : rp.odds });
+        detail: frac || rp.odds });
     }
     if (rp.rtf) {
       breakdown.push({ label: 'Trainer RTF', score: null, max: null, detail: rp.rtf + '% run-to-form' });
