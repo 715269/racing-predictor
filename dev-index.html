@@ -979,6 +979,13 @@ function renderRunnerPicker(race, submitted, sortMode) {
   // Find top OR horse as "top rated" indicator
   const topOR = Math.max(...active.map(r => parseInt(r.ofr)||0));
 
+  // Find top RPR horse for the "RP TOP" badge
+  const topRPRTile = Math.max(...active.map(r => {
+    const rpX = scores[r.name] && scores[r.name].rp;
+    const v = rpX ? parseInt(rpX.rpr) : NaN;
+    return isNaN(v) ? -1 : v;
+  }), -1);
+
   // Sort toggle
   let html = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;margin-top:4px">
     <span style="font-size:12px;color:var(--text-muted);align-self:center;margin-right:4px">Sort:</span>
@@ -996,10 +1003,20 @@ function renderRunnerPicker(race, submitted, sortMode) {
     const colour = colourMap[(r.colour||'').toLowerCase()] || r.colour || '';
     const orVal = parseInt(r.ofr) || 0;
     const isTopRated = orVal > 0 && orVal === topOR;
-    const runnerScore = scores[r.name] || { total: 0, max: 52, breakdown: [] };
+    const runnerScore = scores[r.name] || { total: 0, max: 75, breakdown: [] };
     const scorePct = Math.round((runnerScore.total / maxScore) * 100);
     const scoreRank = active.indexOf(r) + 1;
     const isTopScore = scoreRank === 1 && sortMode === 'score';
+    const rpTile = runnerScore.rp;
+    const rpBits = [];
+    if (rpTile) {
+      if (rpTile.rpr) rpBits.push('RPR ' + rpTile.rpr);
+      if (rpTile.ts) rpBits.push('TS ' + rpTile.ts);
+      if (rpTile.rtf) rpBits.push('RTF ' + rpTile.rtf + '%');
+      if (rpTile.tips > 0) rpBits.push(rpTile.tips + ' tip' + (rpTile.tips === 1 ? '' : 's'));
+      if (rpTile.odds) { const rpFrac = decToFrac(rpTile.odds); if (rpFrac) rpBits.push(rpFrac); }
+    }
+    const isRPTop = rpTile && parseInt(rpTile.rpr) > 0 && parseInt(rpTile.rpr) === topRPRTile;
     const tags = [
       r.age ? r.age + 'yo' : '',
       colour,
@@ -1028,6 +1045,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
             color:${selected ? 'var(--green)' : 'var(--text)'}">
             ${r.name}
             ${isTopRated ? '<span style="font-size:10px;background:var(--amber);color:#fff;padding:1px 5px;border-radius:8px;font-weight:600;margin-left:6px">TOP RATED</span>' : ''}
+            ${isRPTop ? '<span style="font-size:10px;background:#c5093b;color:#fff;padding:1px 5px;border-radius:8px;font-weight:600;margin-left:6px">RP TOP</span>' : ''}
             ${selected ? '<span style="float:right;color:var(--green)">✓</span>' : ''}
           </div>
           <div style="font-size:12px;color:var(--text-muted);margin-bottom:2px">
@@ -1038,6 +1056,7 @@ function renderRunnerPicker(race, submitted, sortMode) {
             ${r.form ? `<span style="font-size:13px;font-weight:500;letter-spacing:1px;color:var(--green-mid)">${r.form}</span>` : ''}
             ${parseInt(r.ofr) > 0 ? `<span style="font-size:11px;background:var(--gray-light);padding:1px 6px;border-radius:8px;color:var(--gray)">OR ${r.ofr}</span>` : ''}
           </div>` : ''}
+          ${rpBits.length ? `<div style="font-size:11px;color:#c5093b;font-weight:600;margin-top:3px">${rpBits.join(' · ')}</div>` : ''}
           <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
             <div style="height:4px;flex:1;background:var(--gray-light);border-radius:2px;overflow:hidden">
               <div style="width:${scorePct}%;height:100%;border-radius:2px;
@@ -1155,7 +1174,7 @@ function getRunnerScoreTelemetry(runner, raceId, course) {
 
   const telemetry = {
     total: Number(s.total || 0),
-    max: Number(s.max || 50),
+    max: Number(s.max || 75),
     form: findScore('recent form'),
     freshness: findScore('freshness'),
     or: findScore('official rating'),
@@ -1163,12 +1182,17 @@ function getRunnerScoreTelemetry(runner, raceId, course) {
     weight: findScore('weight'),
     trainer: findScore('trainer'),
     jockey: findScore('jockey'),
-    cd: findScore('c&d')
+    cd: findScore('c&d'),
+    rpr: findScore('rpr'),
+    ts: findScore('top speed'),
+    rtf: findScore('trainer rtf'),
+    tips: findScore('tipsters')
   };
 
   telemetry.factorTotal =
     telemetry.form + telemetry.freshness + telemetry.or + telemetry.draw +
-    telemetry.weight + telemetry.trainer + telemetry.jockey + telemetry.cd;
+    telemetry.weight + telemetry.trainer + telemetry.jockey + telemetry.cd +
+    telemetry.rpr + telemetry.ts + telemetry.rtf + telemetry.tips;
 
   // Safety: visible score must equal factor total and must not exceed max.
   telemetry.total = Math.round(telemetry.factorTotal * 10) / 10;
@@ -1367,7 +1391,7 @@ async function logRunnersForRace(raceId, course, time, name) {
         is_nr: r.is_nr || false,
         score: {
           total: r.telemetry ? r.telemetry.total : 0,
-          max: r.telemetry ? r.telemetry.max : 50,
+          max: r.telemetry ? r.telemetry.max : 75,
           breakdown: [
             { label: 'Recent form', score: r.telemetry ? r.telemetry.form : 0 },
             { label: 'Freshness', score: r.telemetry ? r.telemetry.freshness : 0 },
@@ -1376,7 +1400,11 @@ async function logRunnersForRace(raceId, course, time, name) {
             { label: 'Weight', score: r.telemetry ? r.telemetry.weight : 0 },
             { label: 'Trainer', score: r.telemetry ? r.telemetry.trainer : 0 },
             { label: 'Jockey', score: r.telemetry ? r.telemetry.jockey : 0 },
-            { label: 'C&D Winner', score: r.telemetry ? r.telemetry.cd : 0 }
+            { label: 'C&D Winner', score: r.telemetry ? r.telemetry.cd : 0 },
+            { label: 'RPR', score: r.telemetry ? r.telemetry.rpr : 0 },
+            { label: 'Top Speed', score: r.telemetry ? r.telemetry.ts : 0 },
+            { label: 'Trainer RTF', score: r.telemetry ? r.telemetry.rtf : 0 },
+            { label: 'Tipsters', score: r.telemetry ? r.telemetry.tips : 0 }
           ]
         }
       })))
@@ -1696,7 +1724,11 @@ async function fetchRaceResults(raceId, week, btn) {
             f_weight: get('Weight'),
             f_trainer: get('Trainer'),
             f_jockey: get('Jockey'),
-            f_cd: get('C&D Winner')
+            f_cd: get('C&D Winner'),
+            f_rpr: get('RPR'),
+            f_ts: get('Top Speed'),
+            f_rtf: get('Trainer RTF'),
+            f_tips: get('Tipsters')
           });
           fetch(SCRIPT_URL + '?' + logParams.toString())
             .catch(e => console.log('Score log failed:', e));
@@ -2278,6 +2310,14 @@ const DRAW_BIAS = {
   'Chepstow':       -0.5,
 };
 
+// Course-checked Racing Post lookup for a runner. Returns null when the
+// horse has no RP row for today's card at this course.
+function rpForRunner(name, course) {
+  const rp = FORM_DATA.rpData && FORM_DATA.rpData[normHorse(name)];
+  if (rp && normCourseRP(rp.course) === normCourseRP(course)) return rp;
+  return null;
+}
+
 function scoreRunner(r, fieldSize, course, fieldRunners) {
   const breakdown = [];
   let total = 0;
@@ -2486,30 +2526,66 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     breakdown.push({ label: 'Best odds', score: null, max: null, detail: bestOdds });
   }
 
-  // ── 10. RACING POST DATA (informational only — no effect on /50 score) ──
+  // ── 10. RACING POST components (RPR 10 · TS 5 · RTF 5 · Tips 5) ──
   // Sourced from FD_RPData via getformdata. Course is cross-checked so a
-  // same-named horse at another meeting can never match.
-  const rp = FORM_DATA.rpData && FORM_DATA.rpData[normHorse(r.name)];
-  if (rp && normCourseRP(rp.course) === normCourseRP(course)) {
-    if (rp.rpr || rp.ts) {
-      breakdown.push({ label: 'RPR / TS', score: null, max: null,
-        detail: 'RPR ' + (rp.rpr || '\u2013') + ' \u00b7 TS ' + (rp.ts || '\u2013') });
-    }
-    if (rp.odds) {
-      const frac = decToFrac(rp.odds);
-      breakdown.push({ label: 'RP forecast', score: null, max: null,
-        detail: frac || rp.odds });
-    }
-    if (rp.rtf) {
-      breakdown.push({ label: 'Trainer RTF', score: null, max: null, detail: rp.rtf + '% run-to-form' });
-    }
-    if (rp.tips > 0) {
-      breakdown.push({ label: 'Tipsters', score: null, max: null,
-        detail: rp.tips + ' (' + rp.sources + ')' });
-    }
+  // same-named horse at another meeting can never match. Races with no RP
+  // coverage score 0 on all four for every runner, so within-race ranking
+  // is unaffected.
+  const rp = rpForRunner(r.name, course);
+  const fieldRP = fieldRunners.map(function(h) { return rpForRunner(h.name, course); });
+
+  // 10a. RPR relative to top RPR in race (max 10, −0.5 per point below top)
+  const rprVal = rp ? parseInt(rp.rpr) : NaN;
+  const fieldRPRs = fieldRP.map(function(x) { return x ? parseInt(x.rpr) : NaN; }).filter(function(v) { return !isNaN(v); });
+  let rprScore = 0, rprDetail = 'No RPR';
+  if (!isNaN(rprVal) && fieldRPRs.length > 0) {
+    const topRPR = Math.max.apply(null, fieldRPRs);
+    rprScore = Math.round(Math.max(0, 10 - (topRPR - rprVal) * 0.5) * 10) / 10;
+    rprDetail = 'RPR ' + rprVal + (rprVal === topRPR ? ' (top)' : ' (' + (topRPR - rprVal) + ' off top)');
+  }
+  total += rprScore;
+  breakdown.push({ label: 'RPR', score: rprScore, max: 10, detail: rprDetail });
+
+  // 10b. Top Speed relative to best TS in race (max 5, −0.25 per point below top)
+  const tsVal = rp ? parseInt(rp.ts) : NaN;
+  const fieldTSs = fieldRP.map(function(x) { return x ? parseInt(x.ts) : NaN; }).filter(function(v) { return !isNaN(v); });
+  let tsScore = 0, tsDetail = 'No TS';
+  if (!isNaN(tsVal) && fieldTSs.length > 0) {
+    const topTS = Math.max.apply(null, fieldTSs);
+    tsScore = Math.round(Math.max(0, 5 - (topTS - tsVal) * 0.25) * 10) / 10;
+    tsDetail = 'TS ' + tsVal + (tsVal === topTS ? ' (top)' : ' (' + (topTS - tsVal) + ' off top)');
+  }
+  total += tsScore;
+  breakdown.push({ label: 'Top Speed', score: tsScore, max: 5, detail: tsDetail });
+
+  // 10c. Trainer RTF — run-to-form % (max 5; 70%+ = full marks)
+  const rtfVal = rp ? parseFloat(rp.rtf) : NaN;
+  let rtfScore = 0, rtfDetail = 'No RTF data';
+  if (!isNaN(rtfVal)) {
+    rtfScore = Math.round(Math.min(5, (rtfVal / 70) * 5) * 10) / 10;
+    rtfDetail = rtfVal + '% run-to-form';
+  }
+  total += rtfScore;
+  breakdown.push({ label: 'Trainer RTF', score: rtfScore, max: 5, detail: rtfDetail });
+
+  // 10d. Tipsters — proportional to most-tipped horse in race (max 5)
+  const tipsVal = rp ? (parseInt(rp.tips) || 0) : 0;
+  const maxTips = Math.max.apply(null, fieldRP.map(function(x) { return x ? (parseInt(x.tips) || 0) : 0; }).concat([0]));
+  let tipsScore = 0, tipsDetail = 'No tips';
+  if (maxTips > 0 && tipsVal > 0) {
+    tipsScore = Math.round((tipsVal / maxTips) * 5 * 10) / 10;
+    tipsDetail = tipsVal + ' tip' + (tipsVal === 1 ? '' : 's') + (rp.sources ? ' (' + rp.sources + ')' : '');
+  }
+  total += tipsScore;
+  breakdown.push({ label: 'Tipsters', score: tipsScore, max: 5, detail: tipsDetail });
+
+  // RP forecast odds — informational only
+  if (rp && rp.odds) {
+    const frac = decToFrac(rp.odds);
+    breakdown.push({ label: 'RP forecast', score: null, max: null, detail: frac || rp.odds });
   }
 
-  return { total: Math.round(total * 10) / 10, max: 50, breakdown: breakdown, bestOdds: bestOdds, rp: (rp && normCourseRP(rp.course) === normCourseRP(course)) ? rp : null };
+  return { total: Math.round(total * 10) / 10, max: 75, breakdown: breakdown, bestOdds: bestOdds, rp: rp };
 }
 
 function renderScoreBar(score, max, color) {
@@ -2532,7 +2608,11 @@ const ANALYZER_DEFAULT_WEIGHTS = {
   weight_weight: ['Weight', 5],
   trainer_weight: ['Trainer', 5],
   jockey_weight: ['Jockey', 5],
-  cd_weight: ['C&D', 3]
+  cd_weight: ['C&D', 3],
+  rpr_weight: ['RPR', 10],
+  ts_weight: ['Top Speed', 5],
+  rtf_weight: ['Trainer RTF', 5],
+  tips_weight: ['Tips', 5]
 };
 
 let analyzerLoaded = false;
@@ -2602,7 +2682,11 @@ function analyzerSetWeights(weights) {
     weight: 'weight_weight',
     trainer: 'trainer_weight',
     jockey: 'jockey_weight',
-    cd: 'cd_weight'
+    cd: 'cd_weight',
+    rpr: 'rpr_weight',
+    ts: 'ts_weight',
+    rtf: 'rtf_weight',
+    tips: 'tips_weight'
   };
   Object.entries(mapping).forEach(([key, id]) => {
     const el = document.getElementById(id);
@@ -2619,7 +2703,11 @@ function factorComparisonHtml(f) {
     ['weight', 'Weight'],
     ['trainer', 'Trainer'],
     ['jockey', 'Jockey'],
-    ['cd', 'C&D']
+    ['cd', 'C&D'],
+    ['rpr', 'RPR'],
+    ['ts', 'TS'],
+    ['rtf', 'RTF'],
+    ['tips', 'Tips']
   ];
 
   const winner = f.winnerFactors || f.factors || {};
