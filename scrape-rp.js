@@ -91,13 +91,41 @@ function sendJSON(targetUrl, payload) {
   });
 }
 
-// Try each selector in order, return the first element handle found (or null).
+// Try each selector in order, return the first VISIBLE element handle found (or null).
 async function firstMatch(page, selectors) {
   for (const sel of selectors) {
-    const el = await page.$(sel);
-    if (el) return { el, sel };
+    const els = await page.$$(sel);
+    for (const el of els) {
+      const visible = await el.evaluate(e => {
+        const r = e.getBoundingClientRect();
+        const style = window.getComputedStyle(e);
+        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+      }).catch(() => false);
+      if (visible) return { el, sel };
+    }
   }
   return null;
+}
+
+// Click an element robustly: try a real Puppeteer click (which does hit-testing
+// and can fail if something overlaps the element), then fall back to a
+// JS-dispatched click if that fails.
+async function safeClick(page, el, label) {
+  try {
+    await el.evaluate(e => e.scrollIntoView({ block: 'center' }));
+    await new Promise(r => setTimeout(r, 200));
+    await el.click();
+    return true;
+  } catch (e) {
+    console.log(`  Native click failed for ${label} (${e.message}) — trying JS click fallback`);
+    try {
+      await el.evaluate(e => e.click());
+      return true;
+    } catch (e2) {
+      console.log(`  JS click fallback also failed for ${label}: ${e2.message}`);
+      return false;
+    }
+  }
 }
 
 async function dismissCookieBanner(page) {
@@ -105,12 +133,25 @@ async function dismissCookieBanner(page) {
     'button#onetrust-accept-btn-handler',
     'button[aria-label="Accept all cookies"]',
     'button[aria-label="Accept All"]',
-    '[data-test-selector="cookie-accept"]'
+    '[data-test-selector="cookie-accept"]',
+    '#usercentrics-root'
   ];
-  const found = await firstMatch(page, candidates);
+  let found = await firstMatch(page, candidates);
+
+  // Fallback: search all buttons for "Accept" text (covers OneTrust, Usercentrics,
+  // Cookiebot, and most custom banners without needing their exact selector).
+  if (!found) {
+    const handle = await page.evaluateHandle(() => {
+      const els = Array.from(document.querySelectorAll('button, a'));
+      return els.find(e => /^(accept all|accept cookies|accept|i agree|allow all)$/i.test((e.textContent || '').trim())) || null;
+    });
+    const el = handle.asElement();
+    if (el) found = { el, sel: '(text match: Accept)' };
+  }
+
   if (found) {
     console.log(`  Dismissing cookie banner via ${found.sel}`);
-    await found.el.click().catch(() => {});
+    await safeClick(page, found.el, 'cookie banner');
     await new Promise(r => setTimeout(r, 1000));
   } else {
     console.log('  No cookie banner matched known selectors (may not be present, or may need a new selector)');
@@ -149,7 +190,11 @@ async function login(page) {
   }
 
   console.log(`  Clicking login trigger (${loginTrigger.sel})`);
-  await loginTrigger.el.click();
+  const clicked = await safeClick(page, loginTrigger.el, 'login trigger');
+  if (!clicked) {
+    await saveDebugArtifact(page, 'login-trigger-unclickable');
+    throw new Error('Login trigger found but could not be clicked');
+  }
   await new Promise(r => setTimeout(r, 2000));
 
   // Login form may be a modal or a full page nav — check both.
@@ -193,7 +238,7 @@ async function login(page) {
     await passwordField.el.press('Enter');
   } else {
     console.log(`  Clicking submit (${submitBtn.sel})`);
-    await submitBtn.el.click();
+    await safeClick(page, submitBtn.el, 'submit button');
   }
 
   await new Promise(r => setTimeout(r, 3000));
