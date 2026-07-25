@@ -257,23 +257,27 @@ async function login(page) {
     await safeClick(page, submitBtn.el, 'submit button');
   }
 
-  await new Promise(r => setTimeout(r, 3000));
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 }).catch(() => {
-    console.log('  No navigation detected after submit (may be a modal-based login — continuing)');
-  });
+  console.log('  Waiting to see how the login attempt resolved...');
+  const outcome = await page.waitForFunction(() => {
+    const stillOnAuthForm = !!document.querySelector('[data-amplify-authenticator]');
+    const pathChanged = !location.pathname.startsWith('/auth/login');
+    const alertEl = document.querySelector('[role="alert"], .amplify-alert, [class*="error" i]');
+    const alertText = alertEl ? (alertEl.textContent || '').trim() : '';
+    if (alertText) return { result: 'error', alertText };
+    if (pathChanged || !stillOnAuthForm) return { result: 'success' };
+    return false; // keep polling
+  }, { timeout: 15000, polling: 500 }).then(h => h.jsonValue()).catch(() => null);
 
-  // Verify login succeeded: look for an account/logout indicator, absence of "Log in"
-  const loggedIn = await page.evaluate(() => {
-    const bodyText = document.body.innerText || '';
-    const hasLogout = /log\s*out|my\s*account/i.test(bodyText);
-    const hasLoginPrompt = /\blog\s*in\b/i.test(bodyText.slice(0, 3000)); // header area roughly
-    return hasLogout || !hasLoginPrompt;
-  });
+  if (outcome && outcome.result === 'error') {
+    console.error(`  RP rejected the login: "${outcome.alertText}"`);
+    await saveDebugArtifact(page, 'login-rejected');
+    throw new Error(`Login rejected by Racing Post: ${outcome.alertText}`);
+  }
 
-  if (!loggedIn) {
-    console.error('  Login verification failed — page still looks logged out. Saving debug artifacts.');
+  if (!outcome || outcome.result !== 'success') {
+    console.error('  Still on the login form after 15s with no visible error message. Saving debug artifacts.');
     await saveDebugArtifact(page, 'login-verify-failed');
-    throw new Error('Login could not be verified');
+    throw new Error('Login could not be verified — no success or error state detected');
   }
 
   console.log('  Login verified.');
