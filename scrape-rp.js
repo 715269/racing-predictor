@@ -92,19 +92,30 @@ function sendJSON(targetUrl, payload) {
 }
 
 // Try each selector in order, return the first VISIBLE element handle found (or null).
-async function firstMatch(page, selectors) {
-  for (const sel of selectors) {
-    const els = await page.$$(sel);
-    for (const el of els) {
-      const visible = await el.evaluate(e => {
-        const r = e.getBoundingClientRect();
-        const style = window.getComputedStyle(e);
-        return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
-      }).catch(() => false);
-      if (visible) return { el, sel };
+// Retries once on "Execution context was destroyed" errors, which happen if a
+// navigation is still settling when this runs.
+async function firstMatch(page, selectors, _retried) {
+  try {
+    for (const sel of selectors) {
+      const els = await page.$$(sel);
+      for (const el of els) {
+        const visible = await el.evaluate(e => {
+          const r = e.getBoundingClientRect();
+          const style = window.getComputedStyle(e);
+          return r.width > 0 && r.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+        }).catch(() => false);
+        if (visible) return { el, sel };
+      }
     }
+    return null;
+  } catch (e) {
+    if (!_retried && /execution context was destroyed|context.*destroyed/i.test(e.message)) {
+      console.log('  Page context changed mid-search (likely a navigation) — waiting and retrying once...');
+      await new Promise(r => setTimeout(r, 2000));
+      return firstMatch(page, selectors, true);
+    }
+    throw e;
   }
-  return null;
 }
 
 // Click an element robustly: try a real Puppeteer click (which does hit-testing
@@ -152,7 +163,12 @@ async function dismissCookieBanner(page) {
   if (found) {
     console.log(`  Dismissing cookie banner via ${found.sel}`);
     await safeClick(page, found.el, 'cookie banner');
-    await new Promise(r => setTimeout(r, 1000));
+    // Consent platforms often trigger a full page reload after accept — wait
+    // for that navigation if it happens, otherwise just settle briefly.
+    await Promise.race([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 8000 }),
+      new Promise(r => setTimeout(r, 3000))
+    ]).catch(() => {});
   } else {
     console.log('  No cookie banner matched known selectors (may not be present, or may need a new selector)');
   }
