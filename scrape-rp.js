@@ -174,6 +174,20 @@ async function dismissCookieBanner(page) {
   }
 }
 
+// Set a React-controlled input's value reliably. Simulated typing (page.type)
+// can silently fail to register with React's internal state if the component
+// re-renders mid-keystroke; this bypasses that by using the native property
+// setter directly, then dispatching the events React listens for.
+async function setReactInputValue(page, elHandle, value) {
+  await elHandle.evaluate((el, val) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, val);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  }, value);
+}
+
 async function login(page) {
   console.log('Loading racingpost.com...');
   await page.goto('https://www.racingpost.com/', { waitUntil: 'networkidle2', timeout: 60000 });
@@ -239,8 +253,20 @@ async function login(page) {
   }
 
   console.log(`  Filling email (${emailField.sel}) and password (${passwordField.sel})`);
-  await emailField.el.type(RP_EMAIL, { delay: 30 });
-  await passwordField.el.type(RP_PASSWORD, { delay: 30 });
+  await setReactInputValue(page, emailField.el, RP_EMAIL);
+  await setReactInputValue(page, passwordField.el, RP_PASSWORD);
+
+  // Verify the values actually registered before attempting submit — React-controlled
+  // inputs can silently drop simulated keystrokes if the component re-renders mid-type.
+  const filledOk = await page.evaluate((emailEl, pwEl) => {
+    return { emailLen: (emailEl.value || '').length, pwLen: (pwEl.value || '').length };
+  }, emailField.el, passwordField.el);
+  console.log(`  Field check — email chars: ${filledOk.emailLen}, password chars: ${filledOk.pwLen}`);
+  if (filledOk.emailLen === 0 || filledOk.pwLen === 0) {
+    console.error('  One or both fields are still empty after filling. Saving debug artifacts.');
+    await saveDebugArtifact(page, 'fields-empty-after-fill');
+    throw new Error('Email/password fields did not retain typed values');
+  }
 
   const submitSelectors = [
     'button[type="submit"]',
