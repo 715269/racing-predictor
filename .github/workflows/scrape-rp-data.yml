@@ -1,0 +1,51 @@
+name: Scrape Racing Post Data
+
+on:
+  # Runs 15 min after the horseracing.net scrape, daily at 6:45am UK time
+  schedule:
+    - cron: '45 6 * * *'
+
+  # Also allow manual trigger from the Actions tab in GitHub
+  workflow_dispatch:
+
+jobs:
+  scrape-rp:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Puppeteer
+        run: npm install puppeteer
+
+      - name: Run RP scraper
+        env:
+          RP_EMAIL: ${{ secrets.RP_EMAIL }}
+          RP_PASSWORD: ${{ secrets.RP_PASSWORD }}
+          APPS_SCRIPT_URL: ${{ secrets.APPS_SCRIPT_URL }}
+          APPS_SCRIPT_URL_DEV: ${{ secrets.APPS_SCRIPT_URL_DEV }}
+        run: node scrape-rp.js
+
+      - name: Upload debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-rp
+          path: |
+            debug-rp-*.png
+            debug-rp-*.html
+          if-no-files-found: ignore
+
+      - name: Log completion
+        if: success()
+        run: echo "RP data updated successfully at $(date)"
+
+      - name: Log failure
+        if: failure()
+        run: echo "RP scrape FAILED at $(date) — check logs and debug-rp artifacts above"
