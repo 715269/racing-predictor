@@ -2358,20 +2358,30 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   total += freshnessScore;
   breakdown.push({ label: 'Freshness', score: freshnessScore, max: 4, detail: freshnessDetail });
 
-  // ── 3. OFFICIAL RATING relative to field (max 10 pts) ────────────
+  // ── 3. OFFICIAL RATING relative to field (max 8 pts) ─────────────
+  // Absolute-pounds decay, mirroring the RPR block below: −0.5 per lb under
+  // the top-rated runner, floored at 0. Replaces min-max normalisation, which
+  // stretched every field across the full range — so a 6lb gap read as 10 vs 0.
+  // Unrated runners take a neutral OR_NEUTRAL rather than 0: unknown, not bad.
+  const OR_MAX = 8, OR_DECAY = 0.5, OR_NEUTRAL = 3.2;
   const orVal = parseInt(r.ofr) || 0;
   let orScore = 0, orDetail = '';
+  const fieldORs = fieldRunners.map(function(h) { return parseInt(h.ofr) || 0; }).filter(function(v) { return v > 0; });
   if (orVal > 0) {
-    const fieldORs = fieldRunners.map(function(h) { return parseInt(h.ofr) || 0; }).filter(function(v) { return v > 0; });
     if (fieldORs.length > 1) {
       const maxOR = Math.max.apply(null, fieldORs);
-      const minOR = Math.min.apply(null, fieldORs);
-      orScore = Math.round(((orVal - minOR) / (maxOR - minOR || 1)) * 10);
+      orScore = Math.round(Math.max(0, OR_MAX - (maxOR - orVal) * OR_DECAY) * 10) / 10;
       orDetail = 'OR ' + orVal + (orVal === maxOR ? ' (top rated)' : ' (' + (maxOR - orVal) + ' off top)');
-    } else { orScore = 5; orDetail = 'OR ' + orVal; }
-  } else { orDetail = 'No OR (Group/Listed)'; }
+    } else {
+      orScore = OR_MAX / 2;
+      orDetail = 'OR ' + orVal + ' (only rated runner)';
+    }
+  } else {
+    orScore = OR_NEUTRAL;
+    orDetail = fieldORs.length > 0 ? 'No OR — neutral' : 'No OR in race — neutral';
+  }
   total += orScore;
-  breakdown.push({ label: 'Official Rating', score: orScore, max: 10, detail: orDetail });
+  breakdown.push({ label: 'Official Rating', score: orScore, max: OR_MAX, detail: orDetail });
 
   // ── 4. DRAW (max 3 pts) — only meaningful at known bias tracks with 10+ runners ──
   const drawNum = parseInt(r.draw);
@@ -2392,7 +2402,11 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
   total += drawScore;
   breakdown.push({ label: 'Draw', score: drawScore, max: 3, detail: drawDetail });
 
-  // ── 5. WEIGHT relative to field (max 5 pts) ──────────────────────
+  // ── 5. WEIGHT relative to field (max 7 pts) ──────────────────────
+  // Carries the 2 points moved off Official Rating. Same absolute-pounds
+  // treatment: −0.35 per lb above the lightest runner (5% of the component
+  // per lb, matching the OR curve), floored at 0.
+  const WT_MAX = 7, WT_DECAY = 0.35;
   const lbs = parseInt(r.lbs);
   let weightScore = 0, weightDetail = '';
   if (!isNaN(lbs) && lbs > 0) {
@@ -2400,12 +2414,12 @@ function scoreRunner(r, fieldSize, course, fieldRunners) {
     if (fieldWeights.length > 1) {
       const maxLbs = Math.max.apply(null, fieldWeights);
       const minLbs = Math.min.apply(null, fieldWeights);
-      weightScore = Math.round(((maxLbs - lbs) / (maxLbs - minLbs || 1)) * 5);
+      weightScore = Math.round(Math.max(0, WT_MAX - (lbs - minLbs) * WT_DECAY) * 10) / 10;
       weightDetail = lbs + 'lbs (' + (lbs === minLbs ? 'lightest' : lbs === maxLbs ? 'top weight' : (lbs - minLbs) + 'lbs above minimum') + ')';
-    } else { weightScore = 3; weightDetail = lbs + 'lbs'; }
+    } else { weightScore = Math.round(WT_MAX * 0.6 * 10) / 10; weightDetail = lbs + 'lbs'; }
   } else { weightDetail = 'Unknown'; }
   total += weightScore;
-  breakdown.push({ label: 'Weight', score: weightScore, max: 5, detail: weightDetail });
+  breakdown.push({ label: 'Weight', score: weightScore, max: WT_MAX, detail: weightDetail });
 
   // ── 6. TRAINER (max 5 pts) ───────────────────────────────────────
   const trainerName = (r.trainer || '').trim();
